@@ -38,9 +38,15 @@ class NewRelicDashboardClient:
             "input[id*='password']"
         )
 
-        page.locator(username_selector).first.wait_for(timeout=20000)
-        page.fill(username_selector, self.settings["username"])
-        page.fill(password_selector, self.settings["password"])
+        username_field = page.locator(username_selector).first
+        password_field = page.locator(password_selector).first
+
+        if username_field.count() == 0 or password_field.count() == 0:
+            raise RuntimeError("New Relic login form did not render as expected.")
+
+        username_field.wait_for(timeout=20000)
+        username_field.fill(self.settings["username"])
+        password_field.fill(self.settings["password"])
 
         submit_button = page.locator(
             "button[type='submit'], input[type='submit'], button:has-text('Sign in')"
