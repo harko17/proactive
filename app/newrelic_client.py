@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import requests
 from playwright.sync_api import sync_playwright
 
 try:
@@ -7,7 +11,6 @@ try:
     from app.report import ExcelReportWriter, build_rows
 except ImportError:  # pragma: no cover - allows running the file directly
     import sys
-    from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from app.config import get_runtime_settings
@@ -24,6 +27,114 @@ class NewRelicDashboardClient:
             if locator.count() > 0:
                 return locator
         return None
+
+    def _query_nrql(self, account_id: str, query: str):
+        api_key = self.settings.get("api_key")
+        if not api_key:
+            raise ValueError("NEW_RELIC_API_KEY is required when using dashboard JSON / NRQL mode")
+
+        payload = {
+            "query": "query($q: String!) { actor { account(id: %s) { nrql(query: $q) { results } } } }" % int(account_id),
+            "variables": {"q": query},
+        }
+        response = requests.post(
+            "https://api.newrelic.com/graphql",
+            headers={"API-Key": api_key, "Content-Type": "application/json"},
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        errors = data.get("errors")
+        if errors:
+            raise RuntimeError(f"New Relic API query failed: {errors}")
+
+        return data.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
+
+    @staticmethod
+    def _extract_value(result):
+        if isinstance(result, list):
+            if not result:
+                return None
+            return NewRelicDashboardClient._extract_value(result[-1])
+        if isinstance(result, dict):
+            for key in ("count", "result", "value", "total", "latest", "average", "max", "min", "sum"):
+                if key in result:
+                    return NewRelicDashboardClient._extract_value(result[key])
+            if len(result) == 1:
+                return NewRelicDashboardClient._extract_value(next(iter(result.values())))
+            for value in result.values():
+                parsed = NewRelicDashboardClient._extract_value(value)
+                if parsed is not None:
+                    return parsed
+            return None
+        if isinstance(result, (int, float)):
+            return result
+        if isinstance(result, str):
+            cleaned = result.strip()
+            if cleaned and cleaned.lower() not in {"null", "none"}:
+                return cleaned
+        return None
+
+    def extract_from_dashboard_json(self):
+        dashboard_json = self.settings.get("dashboard_json") or ""
+        if not dashboard_json:
+            return []
+
+        dashboard_path = Path(dashboard_json)
+        if dashboard_path.exists():
+            dashboard_json = dashboard_path.read_text(encoding="utf-8")
+
+        dashboard = json.loads(dashboard_json)
+        rows = []
+
+        for page in dashboard.get("pages", []):
+            page_name = page.get("name", "New Relic Dashboard")
+            for widget in page.get("widgets", []):
+                title = (widget.get("title") or "").strip()
+                raw_config = widget.get("rawConfiguration") or {}
+                queries = raw_config.get("nrqlQueries") or []
+                if not title or not queries:
+                    continue
+
+                for query_data in queries:
+                    nrql_query = (query_data or {}).get("query")
+                    if not nrql_query:
+                        continue
+
+                    account_id = (query_data or {}).get("accountId")
+                    if not account_id:
+                        account_ids = (query_data or {}).get("accountIds") or []
+                        if account_ids:
+                            account_id = account_ids[0]
+                    if not account_id:
+                        account_id = self.settings.get("account_id")
+                    if not account_id:
+                        continue
+
+                    try:
+                        result = self._query_nrql(str(account_id), nrql_query)
+                    except Exception:
+                        continue
+
+                    value = self._extract_value(result)
+                    if value is None:
+                        continue
+
+                    rows.append(
+                        {
+                            "timestamp": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+                            "category": page_name,
+                            "metric_name": title,
+                            "metric_type": "nrql",
+                            "value": str(value),
+                            "unit": "",
+                            "source": "newrelic api",
+                        }
+                    )
+
+        return rows
 
     def login(self, page):
         page.goto(self.settings["base_url"], wait_until="domcontentloaded", timeout=60000)
@@ -138,13 +249,16 @@ class NewRelicDashboardClient:
         return build_rows(page_text, metric_rules)
 
     def run(self):
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1600, "height": 1200})
-            self.login(page)
-            self.open_dashboard(page)
-            rows = self.extract(page)
-            browser.close()
+        if self.settings.get("dashboard_json"):
+            rows = self.extract_from_dashboard_json()
+        else:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=True)
+                page = browser.new_page(viewport={"width": 1600, "height": 1200})
+                self.login(page)
+                self.open_dashboard(page)
+                rows = self.extract(page)
+                browser.close()
 
         writer = ExcelReportWriter(self.settings["output_path"])
         report_path = writer.write(rows)

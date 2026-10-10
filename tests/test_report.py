@@ -1,9 +1,11 @@
+import json
 import os
 import re
 
 import pytest
 
 from app.config import get_metrics, get_runtime_settings
+from app.newrelic_client import NewRelicDashboardClient
 from app.report import ExcelReportWriter, build_rows
 
 
@@ -66,6 +68,37 @@ def test_zero_values_are_not_dropped_from_report():
     }])
 
     assert rows[0]["value"] == "0"
+
+
+def test_extract_from_dashboard_json_uses_nrql_results(monkeypatch):
+    dashboard = {
+        "pages": [
+            {
+                "name": "Monitoring Overview",
+                "widgets": [
+                    {
+                        "title": "Normal Order Creation",
+                        "rawConfiguration": {
+                            "nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]
+                        },
+                    }
+                ],
+            }
+        ]
+    }
+
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {"dashboard_json": json.dumps(dashboard), "account_id": "123"}
+
+    def fake_query(self, account_id, query):
+        return [{"count": 42}]
+
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+
+    rows = client.extract_from_dashboard_json()
+
+    assert rows[0]["metric_name"] == "Normal Order Creation"
+    assert rows[0]["value"] == "42"
 
 
 def test_excel_report_writer_creates_parent_directory(tmp_path):

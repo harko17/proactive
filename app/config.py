@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List
 
 from dotenv import load_dotenv
@@ -30,6 +30,9 @@ def _read_env(name: str, default: str = "") -> str:
 
 NEW_RELIC_BASE_URL = _read_env("NEW_RELIC_BASE_URL", "https://one.newrelic.com")
 NEW_RELIC_DASHBOARD_URL = _read_env("NEW_RELIC_DASHBOARD_URL")
+NEW_RELIC_DASHBOARD_JSON = _read_env("NEW_RELIC_DASHBOARD_JSON")
+NEW_RELIC_API_KEY = _read_env("NEW_RELIC_API_KEY")
+NEW_RELIC_ACCOUNT_ID = _read_env("NEW_RELIC_ACCOUNT_ID")
 NEW_RELIC_USERNAME = _read_env("NEW_RELIC_USERNAME")
 NEW_RELIC_PASSWORD = _read_env("NEW_RELIC_PASSWORD")
 OUTPUT_PATH = _read_env("OUTPUT_PATH", "output/proactive_report.xlsx")
@@ -60,14 +63,27 @@ def get_metrics() -> List[MetricRule]:
 
 def get_runtime_settings() -> dict:
     base_url = _read_env("NEW_RELIC_BASE_URL", "https://one.newrelic.com")
-    dashboard_url = _required("NEW_RELIC_DASHBOARD_URL", _read_env("NEW_RELIC_DASHBOARD_URL"))
-    username = _required("NEW_RELIC_USERNAME", _read_env("NEW_RELIC_USERNAME"))
-    password = _required("NEW_RELIC_PASSWORD", _read_env("NEW_RELIC_PASSWORD"))
+    dashboard_url = _read_env("NEW_RELIC_DASHBOARD_URL")
+    dashboard_json = _read_env("NEW_RELIC_DASHBOARD_JSON")
+    api_key = _read_env("NEW_RELIC_API_KEY")
+    account_id = _read_env("NEW_RELIC_ACCOUNT_ID")
     output_path = _read_env("OUTPUT_PATH", "output/proactive_report.xlsx")
+
+    if not dashboard_url and not dashboard_json:
+        raise ValueError("Missing required environment variable: NEW_RELIC_DASHBOARD_URL or NEW_RELIC_DASHBOARD_JSON")
+
+    username = _read_env("NEW_RELIC_USERNAME")
+    password = _read_env("NEW_RELIC_PASSWORD")
+    if not dashboard_json and not api_key:
+        username = _required("NEW_RELIC_USERNAME", username)
+        password = _required("NEW_RELIC_PASSWORD", password)
 
     return {
         "base_url": base_url,
         "dashboard_url": dashboard_url,
+        "dashboard_json": dashboard_json,
+        "api_key": api_key,
+        "account_id": account_id,
         "username": username,
         "password": password,
         "output_path": output_path,
