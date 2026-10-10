@@ -112,7 +112,9 @@ def test_extract_from_dashboard_json_filters_za_monitoring_widgets(monkeypatch):
                     ,
                     {"title": "Pending Payment Cancellations", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
                     ,
-                    {"title": "Order fullfilment Request - Failures", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                    {"title": "Order fulfilment Request - Failures", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                    ,
+                    {"title": "Order fulfilment Request - Failures to read response", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
                     ,
                     {"title": "Shipment creation", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
                     ,
@@ -142,7 +144,8 @@ def test_extract_from_dashboard_json_filters_za_monitoring_widgets(monkeypatch):
     assert "Normal Order Creation" not in metric_names
     assert "Account confirmation email" not in metric_names
     assert "Pending Payment Cancellations" in metric_names
-    assert "Order fullfilment Request - Failures" in metric_names
+    assert "Order fulfilment Request - Failures" in metric_names
+    assert "Order fulfilment Request - Failures to read response" in metric_names
     assert "Shipment creation" in metric_names
     assert "Customer Sync to Magento - Error" in metric_names
     assert "Contact Form - Error" in metric_names

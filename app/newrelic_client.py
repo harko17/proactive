@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import requests
@@ -78,37 +79,60 @@ class NewRelicDashboardClient:
         return None
 
     @staticmethod
-    def _za_monitoring_metric_names():
-        return {
-            "Pending Payment Cancellations",
-            "Order fullfilment Request - Failures",
-            "Order fullfilment Request - Failures to read response",
-            "Shipment creation",
-            "Shipment creation error",
-            "Customer Sync to Magento - Error",
-            "Contact Form - Error",
-            "Inventory Sync error",
+    def _normalize_widget_title(title: str) -> str:
+        if not title:
+            return ""
+        return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+
+    @classmethod
+    def _za_monitoring_metric_names(cls):
+        canonical = {
+            "pending payment cancellations",
+            "order fulfilment request failures",
+            "order fullfilment request failures",
+            "order fulfillment request failures",
+            "order fulfilment request failures to read response",
+            "order fullfilment request failures to read response",
+            "order fulfillment request failures to read response",
+            "shipment creation",
+            "shipment creation error",
+            "customer sync to magento error",
+            "contact form error",
+            "inventory sync error",
         }
+        return {cls._normalize_widget_title(name) for name in canonical}
+
+    @classmethod
+    def _matches_za_metric_name(cls, title: str) -> bool:
+        normalized_title = cls._normalize_widget_title(title)
+        if not normalized_title:
+            return False
+        return normalized_title in cls._za_monitoring_metric_names()
 
     @staticmethod
     def _category_for_za_metric(title: str):
+        title_key = NewRelicDashboardClient._normalize_widget_title(title)
         order_fulfillment = {
-            "Pending Payment Cancellations",
-            "Order fullfilment Request - Failures",
-            "Order fullfilment Request - Failures to read response",
-            "Shipment creation",
-            "Shipment creation error",
+            "pending payment cancellations",
+            "order fulfilment request failures",
+            "order fullfilment request failures",
+            "order fulfillment request failures",
+            "order fulfilment request failures to read response",
+            "order fullfilment request failures to read response",
+            "order fulfillment request failures to read response",
+            "shipment creation",
+            "shipment creation error",
         }
-        if title in order_fulfillment:
+        if title_key in order_fulfillment:
             return "Order Fulfillment"
-        if title in {"Customer Sync to Magento - Error", "Contact Form - Error", "Inventory Sync error"}:
+        if title_key in {"customer sync to magento error", "contact form error", "inventory sync error"}:
             return "Integration"
         return "Monitoring"
 
     def _should_include_dashboard_widget(self, dashboard_name: str, title: str) -> bool:
         if "za" not in (dashboard_name or "").lower():
             return True
-        return title in self._za_monitoring_metric_names()
+        return self._matches_za_metric_name(title)
 
     def extract_from_dashboard_json(self):
         dashboard_json = self.settings.get("dashboard_json") or ""
