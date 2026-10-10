@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from playwright.sync_api import sync_playwright
+
 try:
     from app.config import get_runtime_settings
     from app.report import ExcelReportWriter, build_rows
