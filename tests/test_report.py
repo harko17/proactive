@@ -1,8 +1,9 @@
 import os
+import re
 
 import pytest
 
-from app.config import get_runtime_settings
+from app.config import get_metrics, get_runtime_settings
 from app.report import ExcelReportWriter, build_rows
 
 
@@ -32,6 +33,24 @@ def test_build_rows_extracts_and_normalizes_values():
 
     assert rows[0]["value"] == "12450"
     assert rows[1]["value"] == "3.5"
+
+
+def test_default_metrics_match_real_dashboard_label_variants():
+    page_text = """
+    Customer creation sync to CRM - Trend 12
+    Shipment result processing error monitor 4
+    Shipment instruction Cron Error monitor 7
+    """
+
+    rules = {
+        "Customer creation sync to CRM": "Customer creation sync to CRM",
+        "Shipment result processing error": "Shipment result processing error",
+        "Shipment instruction Cron Error": "Shipment instruction Cron Error",
+    }
+
+    for rule_name, expected_text in rules.items():
+        matching_rule = next(rule for rule in get_metrics() if rule.name == rule_name)
+        assert re.search(matching_rule.regex, page_text, re.IGNORECASE)
 
 
 def test_excel_report_writer_creates_parent_directory(tmp_path):
