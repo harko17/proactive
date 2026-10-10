@@ -1,9 +1,13 @@
-from __future__ import annotations
+try:
+    from app.config import get_runtime_settings
+    from app.report import ExcelReportWriter, build_rows
+except ImportError:  # pragma: no cover - allows running the file directly
+    import sys
+    from pathlib import Path
 
-from playwright.sync_api import sync_playwright
-
-from app.config import get_runtime_settings
-from app.report import ExcelReportWriter, build_rows
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from app.config import get_runtime_settings
+    from app.report import ExcelReportWriter, build_rows
 
 
 class NewRelicDashboardClient:

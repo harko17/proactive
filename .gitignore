@@ -1,0 +1,13 @@
+# Python cache and virtualenv
+__pycache__/
+.venv/
+
+# Local environment secrets
+.env
+
+# Generated outputs
+output/
+logs/*.log
+
+# Tooling caches
+.pytest_cache/
