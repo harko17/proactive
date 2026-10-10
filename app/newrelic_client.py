@@ -134,15 +134,27 @@ class NewRelicDashboardClient:
             return True
         return self._matches_za_metric_name(title)
 
+    @staticmethod
+    def _load_dashboard_json(raw_dashboard_json: str) -> str:
+        value = (raw_dashboard_json or "").strip()
+        if not value:
+            return ""
+
+        if value.startswith("{") or value.startswith("["):
+            return value
+
+        dashboard_path = Path(value)
+        if dashboard_path.exists():
+            return dashboard_path.read_text(encoding="utf-8")
+
+        return value
+
     def extract_from_dashboard_json(self):
         dashboard_json = self.settings.get("dashboard_json") or ""
         if not dashboard_json:
             return []
 
-        dashboard_path = Path(dashboard_json)
-        if dashboard_path.exists():
-            dashboard_json = dashboard_path.read_text(encoding="utf-8")
-
+        dashboard_json = self._load_dashboard_json(dashboard_json)
         dashboard = json.loads(dashboard_json)
         rows = []
         dashboard_name = dashboard.get("name", "")

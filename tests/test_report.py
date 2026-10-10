@@ -101,6 +101,38 @@ def test_extract_from_dashboard_json_uses_nrql_results(monkeypatch):
     assert rows[0]["value"] == "42"
 
 
+def test_extract_from_dashboard_json_accepts_long_json_string(monkeypatch):
+    dashboard = {
+        "name": "New Proactive Business Monitoring - ZA count",
+        "pages": [
+            {
+                "name": "Monitoring Overview",
+                "widgets": [
+                    {
+                        "title": "Pending Payment Cancellations",
+                        "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]},
+                    }
+                ],
+            }
+        ],
+        "notes": "\n".join(["# Proactive Business Monitoring Dashboard for ZA"] * 80),
+    }
+    dashboard_json = json.dumps(dashboard)
+
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {"dashboard_json": dashboard_json, "account_id": "123"}
+
+    def fake_query(self, account_id, query):
+        return [{"count": 7}]
+
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+
+    rows = client.extract_from_dashboard_json()
+
+    assert rows[0]["metric_name"] == "Pending Payment Cancellations"
+    assert rows[0]["value"] == "7"
+
+
 def test_extract_from_dashboard_json_filters_za_monitoring_widgets(monkeypatch):
     dashboard = {
         "name": "New Proactive Business Monitoring -  ZA  count",
