@@ -24,11 +24,15 @@ def _required(name: str, value: str) -> str:
     return value
 
 
-NEW_RELIC_BASE_URL = (os.getenv("NEW_RELIC_BASE_URL", "https://one.newrelic.com") or "https://one.newrelic.com").strip()
-NEW_RELIC_DASHBOARD_URL = (os.getenv("NEW_RELIC_DASHBOARD_URL", "") or "").strip()
-NEW_RELIC_USERNAME = (os.getenv("NEW_RELIC_USERNAME", "") or "").strip()
-NEW_RELIC_PASSWORD = (os.getenv("NEW_RELIC_PASSWORD", "") or "").strip()
-OUTPUT_PATH = (os.getenv("OUTPUT_PATH", "output/proactive_report.xlsx") or "output/proactive_report.xlsx").strip()
+def _read_env(name: str, default: str = "") -> str:
+    return (os.getenv(name, default) or "").strip()
+
+
+NEW_RELIC_BASE_URL = _read_env("NEW_RELIC_BASE_URL", "https://one.newrelic.com")
+NEW_RELIC_DASHBOARD_URL = _read_env("NEW_RELIC_DASHBOARD_URL")
+NEW_RELIC_USERNAME = _read_env("NEW_RELIC_USERNAME")
+NEW_RELIC_PASSWORD = _read_env("NEW_RELIC_PASSWORD")
+OUTPUT_PATH = _read_env("OUTPUT_PATH", "output/proactive_report.xlsx")
 
 DEFAULT_METRICS: List[MetricRule] = [
     MetricRule("Order Creation", "Normal Order Creation", "count", r"Normal Order Creation\s*([0-9,]+(?:\.\d+)?)"),
@@ -55,15 +59,17 @@ def get_metrics() -> List[MetricRule]:
 
 
 def get_runtime_settings() -> dict:
-    dashboard_url = _required("NEW_RELIC_DASHBOARD_URL", NEW_RELIC_DASHBOARD_URL)
-    username = _required("NEW_RELIC_USERNAME", NEW_RELIC_USERNAME)
-    password = _required("NEW_RELIC_PASSWORD", NEW_RELIC_PASSWORD)
+    base_url = _read_env("NEW_RELIC_BASE_URL", "https://one.newrelic.com")
+    dashboard_url = _required("NEW_RELIC_DASHBOARD_URL", _read_env("NEW_RELIC_DASHBOARD_URL"))
+    username = _required("NEW_RELIC_USERNAME", _read_env("NEW_RELIC_USERNAME"))
+    password = _required("NEW_RELIC_PASSWORD", _read_env("NEW_RELIC_PASSWORD"))
+    output_path = _read_env("OUTPUT_PATH", "output/proactive_report.xlsx")
 
     return {
-        "base_url": NEW_RELIC_BASE_URL,
+        "base_url": base_url,
         "dashboard_url": dashboard_url,
         "username": username,
         "password": password,
-        "output_path": OUTPUT_PATH,
+        "output_path": output_path,
         "metrics": get_metrics(),
     }

@@ -29,10 +29,15 @@ class NewRelicDashboardClient:
         page.goto(self.settings["base_url"], wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(4000)
 
-        login_link = page.locator(
-            "a:has-text('Log in'), button:has-text('Log in'), text=Log in, [data-testid*='login']"
-        ).first
-        if login_link.count() > 0:
+        login_selectors = [
+            "a:has-text('Log in')",
+            "button:has-text('Log in')",
+            "a:has-text('Sign in')",
+            "button:has-text('Sign in')",
+            "[data-testid*='login']",
+        ]
+        login_link = self._find_first(page, login_selectors)
+        if login_link is not None:
             try:
                 login_link.click(timeout=20000)
             except Exception:
