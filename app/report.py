@@ -49,6 +49,16 @@ def normalize_value(raw_value: str) -> str:
     value = raw_value.strip()
     value = value.replace(",", "")
     value = value.replace("%", "")
+    value = value.replace(" ", "")
+
+    if value.lower().endswith("k"):
+        value = str(float(value[:-1]) * 1000)
+    elif value.lower().endswith("m"):
+        value = str(float(value[:-1]) * 1000000)
+
+    if value.endswith(".0"):
+        value = value[:-2]
+
     return value
 
 
@@ -71,7 +81,7 @@ def build_rows(page_text: str, metric_rules: list[dict]) -> list[dict]:
 
     for rule in metric_rules:
         value = extract_metric_value(page_text, rule)
-        if value:
+        if value != "":
             rows.append(
                 {
                     "timestamp": timestamp,

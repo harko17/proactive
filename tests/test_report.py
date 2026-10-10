@@ -53,6 +53,21 @@ def test_default_metrics_match_real_dashboard_label_variants():
         assert re.search(matching_rule.regex, page_text, re.IGNORECASE)
 
 
+def test_zero_values_are_not_dropped_from_report():
+    page_text = """
+    Pending / Processing status 0
+    """
+    rows = build_rows(page_text, [{
+        "category": "Order Creation",
+        "name": "Pending / Processing status",
+        "metric_type": "latest value",
+        "regex": r"Pending / Processing status\s*([0-9,]+(?:\.\d+)?)",
+        "unit": "orders",
+    }])
+
+    assert rows[0]["value"] == "0"
+
+
 def test_excel_report_writer_creates_parent_directory(tmp_path):
     target = tmp_path / "nested" / "report.xlsx"
 
