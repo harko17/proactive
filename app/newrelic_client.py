@@ -77,6 +77,39 @@ class NewRelicDashboardClient:
                 return cleaned
         return None
 
+    @staticmethod
+    def _za_monitoring_metric_names():
+        return {
+            "Pending Payment Cancellations",
+            "Order fullfilment Request - Failures",
+            "Order fullfilment Request - Failures to read response",
+            "Shipment creation",
+            "Shipment creation error",
+            "Customer Sync to Magento - Error",
+            "Contact Form - Error",
+            "Inventory Sync error",
+        }
+
+    @staticmethod
+    def _category_for_za_metric(title: str):
+        order_fulfillment = {
+            "Pending Payment Cancellations",
+            "Order fullfilment Request - Failures",
+            "Order fullfilment Request - Failures to read response",
+            "Shipment creation",
+            "Shipment creation error",
+        }
+        if title in order_fulfillment:
+            return "Order Fulfillment"
+        if title in {"Customer Sync to Magento - Error", "Contact Form - Error", "Inventory Sync error"}:
+            return "Integration"
+        return "Monitoring"
+
+    def _should_include_dashboard_widget(self, dashboard_name: str, title: str) -> bool:
+        if "za" not in (dashboard_name or "").lower():
+            return True
+        return title in self._za_monitoring_metric_names()
+
     def extract_from_dashboard_json(self):
         dashboard_json = self.settings.get("dashboard_json") or ""
         if not dashboard_json:
@@ -88,11 +121,15 @@ class NewRelicDashboardClient:
 
         dashboard = json.loads(dashboard_json)
         rows = []
+        dashboard_name = dashboard.get("name", "")
 
         for page in dashboard.get("pages", []):
             page_name = page.get("name", "New Relic Dashboard")
             for widget in page.get("widgets", []):
                 title = (widget.get("title") or "").strip()
+                if not self._should_include_dashboard_widget(dashboard_name, title):
+                    continue
+
                 raw_config = widget.get("rawConfiguration") or {}
                 queries = raw_config.get("nrqlQueries") or []
                 if not title or not queries:
@@ -125,9 +162,9 @@ class NewRelicDashboardClient:
                     rows.append(
                         {
                             "timestamp": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-                            "category": page_name,
+                            "category": self._category_for_za_metric(title) if "za" in dashboard_name.lower() else page_name,
                             "metric_name": title,
-                            "metric_type": "nrql",
+                            "metric_type": "count",
                             "value": str(value),
                             "unit": "",
                             "source": "newrelic api",

@@ -101,6 +101,54 @@ def test_extract_from_dashboard_json_uses_nrql_results(monkeypatch):
     assert rows[0]["value"] == "42"
 
 
+def test_extract_from_dashboard_json_filters_za_monitoring_widgets(monkeypatch):
+    dashboard = {
+        "name": "New Proactive Business Monitoring -  ZA  count",
+        "pages": [
+            {
+                "name": "Monitoring Overview",
+                "widgets": [
+                    {"title": "Normal Order Creation", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                    ,
+                    {"title": "Pending Payment Cancellations", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                    ,
+                    {"title": "Order fullfilment Request - Failures", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                    ,
+                    {"title": "Shipment creation", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                    ,
+                    {"title": "Customer Sync to Magento - Error", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                    ,
+                    {"title": "Contact Form - Error", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                    ,
+                    {"title": "Inventory Sync error", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                    ,
+                    {"title": "Account confirmation email", "rawConfiguration": {"nrqlQueries": [{"accountId": "123", "query": "FROM Log SELECT count(*)"}]}}
+                ],
+            }
+        ],
+    }
+
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {"dashboard_json": json.dumps(dashboard), "account_id": "123"}
+
+    def fake_query(self, account_id, query):
+        return [{"count": 1}]
+
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+
+    rows = client.extract_from_dashboard_json()
+    metric_names = [row["metric_name"] for row in rows]
+
+    assert "Normal Order Creation" not in metric_names
+    assert "Account confirmation email" not in metric_names
+    assert "Pending Payment Cancellations" in metric_names
+    assert "Order fullfilment Request - Failures" in metric_names
+    assert "Shipment creation" in metric_names
+    assert "Customer Sync to Magento - Error" in metric_names
+    assert "Contact Form - Error" in metric_names
+    assert "Inventory Sync error" in metric_names
+
+
 def test_excel_report_writer_creates_parent_directory(tmp_path):
     target = tmp_path / "nested" / "report.xlsx"
 
