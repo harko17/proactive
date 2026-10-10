@@ -62,9 +62,33 @@ class NewRelicDashboardClient:
         ]
 
         username_field = self._find_first(page, username_selectors)
-        password_field = self._find_first(page, password_selectors)
+        if username_field is not None:
+            username_field.wait_for(timeout=20000)
+            username_field.fill(self.settings["username"])
 
-        if username_field is None or password_field is None:
+            continue_button = page.locator(
+                "button:has-text('Continue'), button:has-text('Next'), button:has-text('Submit'), button:has-text('Sign in'), button:has-text('Log in'), input[type='submit']"
+            ).first
+            if continue_button.count() > 0:
+                try:
+                    continue_button.click(timeout=20000)
+                except Exception:
+                    pass
+
+            page.wait_for_timeout(2500)
+
+        password_field = self._find_first(page, password_selectors)
+        if password_field is None:
+            for selector in password_selectors:
+                try:
+                    page.wait_for_selector(selector, timeout=30000)
+                    password_field = self._find_first(page, password_selectors)
+                    if password_field is not None:
+                        break
+                except Exception:
+                    continue
+
+        if username_field is None and password_field is None:
             debug_inputs = []
             for selector in username_selectors + password_selectors:
                 for candidate in page.locator(selector).all():
@@ -79,15 +103,18 @@ class NewRelicDashboardClient:
                 f"Found inputs: {debug_inputs}"
             )
 
-        username_field.wait_for(timeout=20000)
-        username_field.fill(self.settings["username"])
-        password_field.fill(self.settings["password"])
+        if password_field is not None:
+            password_field.wait_for(timeout=20000)
+            password_field.fill(self.settings["password"])
 
         submit_button = page.locator(
-            "button[type='submit'], input[type='submit'], button:has-text('Sign in'), button:has-text('Log in')"
+            "button[type='submit'], input[type='submit'], button:has-text('Sign in'), button:has-text('Log in'), button:has-text('Continue'), button:has-text('Next')"
         ).first
         if submit_button.count() > 0:
-            submit_button.click(timeout=20000)
+            try:
+                submit_button.click(timeout=20000)
+            except Exception:
+                pass
 
         page.wait_for_load_state("networkidle", timeout=90000)
 
