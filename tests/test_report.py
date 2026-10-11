@@ -127,16 +127,16 @@ def test_single_aggregate_count_zero_is_preserved():
     )
 
 
-def test_all_zero_time_series_is_blank_not_zero():
+def test_all_zero_time_series_reports_zero_and_latest_bucket_timestamp():
     buckets = [
         {"beginTimeSeconds": 1_791_686_399, "endTimeSeconds": 1_791_688_199, "count": 0},
         {"beginTimeSeconds": 1_791_688_199, "endTimeSeconds": 1_791_689_999, "count": 0},
     ]
 
     assert NewRelicDashboardClient._extract_report_value(buckets) == (
-        None,
-        None,
-        "No non-zero value",
+        0,
+        "2026-10-11 03:39:59 UTC",
+        "OK",
     )
 
 
@@ -165,8 +165,8 @@ def test_graphql_response_maps_every_alias_into_report_rows():
     assert by_alias["shipmentInstructionCronMonitor"]["value"] == 15
     assert by_alias["docomoOutboundApiCall"]["value"] == 43
     assert by_alias["ordersYetToSyncDownstream"]["value"] == 62
-    assert by_alias["deviceTrialPaymentPendingCharge"]["value"] is None
-    assert by_alias["deviceTrialPaymentPendingCharge"]["status"] == "No non-zero value"
+    assert by_alias["deviceTrialPaymentPendingCharge"]["value"] == 0
+    assert by_alias["deviceTrialPaymentPendingCharge"]["status"] == "OK"
     assert by_alias["normalOrderCreation"]["account_id"] == "4198216"
     assert by_alias["productUpdatePricebookError"]["account_id"] == "6263774"
 

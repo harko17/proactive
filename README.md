@@ -31,4 +31,4 @@ python -m app.newrelic_client
 
 The output path defaults to `output/proactive_report.xlsx`; set `OUTPUT_PATH` to change it. GitHub Actions runs hourly or by manual dispatch, uploads the workbook, and commits it only after a successful API/report run.
 
-For a multi-bucket time series, the report scans newest to oldest and records the latest positive value and its bucket timestamp. If all buckets are zero, the value is blank. A single aggregate result of `count: 0` remains zero. See [EXCEL_REPORT.md](./EXCEL_REPORT.md) for report details.
+For a multi-bucket time series, the report scans newest to oldest and records the latest positive value and its bucket timestamp. If every bucket is zero, it reports `0` with the latest bucket timestamp. A single aggregate result of `count: 0` also remains zero. See [EXCEL_REPORT.md](./EXCEL_REPORT.md) for report details.

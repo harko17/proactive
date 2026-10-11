@@ -152,24 +152,34 @@ class NewRelicDashboardClient:
         if not isinstance(result, list):
             return None, None
 
+        all_buckets_zero = bool(result)
+        latest_zero_timestamp = None
         for item in reversed(result):
             if not isinstance(item, dict):
+                all_buckets_zero = False
                 continue
 
             value = NewRelicDashboardClient._extract_value(item)
             if isinstance(value, bool):
+                all_buckets_zero = False
                 continue
             try:
                 numeric_value = float(value)
             except (TypeError, ValueError):
-                continue
-            if numeric_value <= 0:
+                all_buckets_zero = False
                 continue
 
             timestamp = next(
                 (item.get(key) for key in ("endTimeSeconds", "timestamp", "time", "beginTimeSeconds") if item.get(key) is not None),
                 None,
             )
+            if numeric_value == 0 and latest_zero_timestamp is None:
+                latest_zero_timestamp = timestamp
+            if numeric_value < 0:
+                all_buckets_zero = False
+                continue
+            if numeric_value == 0:
+                continue
             if timestamp is not None:
                 try:
                     epoch = float(timestamp)
@@ -179,6 +189,19 @@ class NewRelicDashboardClient:
                 except (TypeError, ValueError, OSError, OverflowError):
                     timestamp = str(timestamp)
             return value, timestamp
+
+        if all_buckets_zero:
+            if latest_zero_timestamp is not None:
+                try:
+                    epoch = float(latest_zero_timestamp)
+                    if abs(epoch) >= 100_000_000_000:
+                        epoch /= 1000
+                    latest_zero_timestamp = datetime.fromtimestamp(
+                        epoch, tz=timezone.utc
+                    ).strftime("%Y-%m-%d %H:%M:%S UTC")
+                except (TypeError, ValueError, OSError, OverflowError):
+                    latest_zero_timestamp = str(latest_zero_timestamp)
+            return 0, latest_zero_timestamp
 
         return None, None
 
@@ -196,7 +219,7 @@ class NewRelicDashboardClient:
         if timestamped_buckets:
             value, timestamp = NewRelicDashboardClient._extract_latest_nonzero(result)
             if value is None:
-                return None, None, "No non-zero value"
+                return None, None, "No numeric result"
             return value, timestamp, "OK"
 
         value = NewRelicDashboardClient._extract_value(result)
@@ -316,7 +339,7 @@ class NewRelicDashboardClient:
         report_path = writer.write(rows)
         failed_rows = [
             row for row in rows
-            if row.get("status") not in {"OK", "No numeric result", "No non-zero value"}
+            if row.get("status") not in {"OK", "No numeric result"}
         ]
         if failed_rows:
             raise RuntimeError(

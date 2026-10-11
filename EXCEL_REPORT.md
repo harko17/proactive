@@ -20,7 +20,7 @@ Response results may contain aggregate counts such as `{"count": 15}` or time-se
 For timestamped buckets, the app scans from newest to oldest and reports the latest non-zero metric value—in this example, `1`—along with that bucket's timestamp. It recognizes count-shaped keys including `count`, `count.message`, and `uniqueCount.message`. Timestamp fields are excluded from metric extraction.
 
 - A single aggregate `{"count": 0}` is a real result and is written as numeric zero.
-- An all-zero time series produces a blank value with status `No non-zero value`.
+- If every time-series bucket is zero, the report shows `0` and keeps the latest bucket timestamp.
 - A failed GraphQL query produces a blank cell and a warning; the run fails after saving the report rather than presenting a failed query as zero.
 
 ## Workbook layout
@@ -32,7 +32,7 @@ The **Dashboard Summary** sheet has four columns:
 | A | Monitoring category |
 | B | Widget title |
 | C | `count`, `latest value`, or `trend` |
-| D | Numeric value from the API, or blank when no non-zero series result is available |
+| D | Numeric value from the API, including `0` when every series bucket is zero; blank when no usable numeric result exists |
 
 The title row reads **Japan - Monitoring charts** and **Monitoring**. Adjacent rows in the same category share a merged category cell. Account IDs, status, and timestamps remain in the internal result rows so the visible workbook retains the compact dashboard-like layout.
 
