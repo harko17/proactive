@@ -64,6 +64,8 @@ If a dashboard query does not already specify a time window, the app appends `SI
 
 For metrics classified as `latest value` or `trend`, the report scans NRQL result buckets from newest to oldest and records the first positive numeric value. If no positive bucket exists, the report shows `No non-zero value` with a blank value rather than misreporting zero. Other metric types retain their normal query-result value.
 
+See [EXCEL_REPORT.md](./EXCEL_REPORT.md) for the workbook layout and value-selection details.
+
 ## Run once
 
 ```bash

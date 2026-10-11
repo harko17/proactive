@@ -277,26 +277,36 @@ def test_excel_report_writer_creates_parent_directory(tmp_path):
     target = tmp_path / "nested" / "report.xlsx"
 
     writer = ExcelReportWriter(str(target))
-    saved_path = writer.write([{
-        "timestamp": "now",
-        "dashboard_url": "https://one.newrelic.com/dashboards",
-        "category": "Test",
-        "metric_name": "Test metric",
-        "metric_type": "count",
-        "value": "42",
-        "unit": "items",
-        "source": "unit test",
-    }])
+    saved_path = writer.write([
+        {
+            "timestamp": "now",
+            "dashboard_url": "https://one.newrelic.com/dashboards",
+            "category": "Order Creation",
+            "metric_name": "Test metric",
+            "metric_type": "count",
+            "value": "42",
+            "unit": "items",
+            "source": "unit test",
+        },
+        {
+            "category": "Order Creation",
+            "metric_name": "Test latest metric",
+            "metric_type": "latest value",
+            "value": 9,
+        },
+    ])
 
     assert saved_path == str(target)
     assert target.exists()
-    workbook = load_workbook(target, data_only=True)
+    workbook = load_workbook(target)
     sheet = workbook["Dashboard Summary"]
     assert sheet["A1"].value == "New Relic Dashboard - Monitoring charts"
-    assert sheet["H5"].value == 42
-    assert sheet["G5"].value == "count"
+    assert sheet["C1"].value == "Monitoring"
+    assert sheet["D2"].value == 42
+    assert sheet["C2"].value == "count"
     assert sheet["A1"].hyperlink.target == "https://one.newrelic.com/dashboards"
-    assert sheet.freeze_panes == "A5"
+    assert "A2:A3" in {str(merged_range) for merged_range in sheet.merged_cells.ranges}
+    assert sheet["A2"].alignment.horizontal == "center"
 
 
 def test_extract_from_real_dashboard_json_preserves_query_account_and_category(monkeypatch):
