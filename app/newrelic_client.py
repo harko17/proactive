@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+import warnings
 from pathlib import Path
 
 import requests
@@ -29,29 +31,82 @@ class NewRelicDashboardClient:
                 return locator
         return None
 
+    @staticmethod
+    def _apply_reporting_window(query: str, reporting_window: str = "24 hours ago") -> str:
+        query_text = (query or "").strip()
+        if not query_text:
+            return query_text
+        if re.search(r"\bSINCE\b|\bUNTIL\b|\bCOMPARE\b", query_text, flags=re.IGNORECASE):
+            return query_text
+        if re.search(r"\bTIMESERIES\b", query_text, flags=re.IGNORECASE):
+            return re.sub(r"\bTIMESERIES\b", f"SINCE {reporting_window} TIMESERIES", query_text, count=1, flags=re.IGNORECASE)
+        return f"{query_text} SINCE {reporting_window}"
+
     def _query_nrql(self, account_id: str, query: str):
         api_key = self.settings.get("api_key")
         if not api_key:
             raise ValueError("NEW_RELIC_API_KEY is required when using dashboard JSON / NRQL mode")
 
+        effective_query = self._apply_reporting_window(query, self.settings.get("reporting_window", "24 hours ago"))
+        endpoint = self.settings.get("graphql_endpoint") or "https://api.newrelic.com/graphql"
         payload = {
             "query": "query($q: String!) { actor { account(id: %s) { nrql(query: $q) { results } } } }" % int(account_id),
-            "variables": {"q": query},
+            "variables": {"q": effective_query},
         }
-        response = requests.post(
-            "https://api.newrelic.com/graphql",
-            headers={"API-Key": api_key, "Content-Type": "application/json"},
-            json=payload,
-            timeout=60,
-        )
-        response.raise_for_status()
-        data = response.json()
 
-        errors = data.get("errors")
-        if errors:
-            raise RuntimeError(f"New Relic API query failed: {errors}")
+        retries = 3
+        for attempt in range(retries + 1):
+            try:
+                response = requests.post(
+                    endpoint,
+                    headers={"API-Key": api_key, "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=(10, 60),
+                )
+            except requests.RequestException as exc:
+                if attempt >= retries:
+                    raise RuntimeError(f"New Relic GraphQL request failed for account {account_id}: {exc}") from exc
+                time.sleep(2 ** attempt)
+                continue
 
-        return data.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                if attempt >= retries:
+                    raise RuntimeError(f"New Relic API rate limit exceeded for account {account_id}: {response.text}")
+                delay = float(retry_after) if retry_after and retry_after.replace(".", "", 1).isdigit() else 2 ** attempt
+                time.sleep(delay)
+                continue
+
+            if response.status_code in {500, 502, 503, 504}:
+                if attempt >= retries:
+                    raise RuntimeError(f"New Relic API server error for account {account_id}: HTTP {response.status_code}")
+                delay = 2 ** attempt
+                time.sleep(delay)
+                continue
+
+            if response.status_code in {401, 403}:
+                raise RuntimeError(
+                    "New Relic authentication failed. Verify NEW_RELIC_API_KEY and that it can query account "
+                    f"{account_id}."
+                )
+
+            if response.status_code >= 400:
+                raise RuntimeError(
+                    f"New Relic GraphQL request failed for account {account_id}: HTTP {response.status_code} {response.text}"
+                )
+
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise RuntimeError(f"New Relic GraphQL response for account {account_id} was not valid JSON: {response.text}") from exc
+
+            errors = data.get("errors")
+            if errors:
+                raise RuntimeError(f"New Relic API query failed for account {account_id}: {errors}")
+
+            return data.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
+
+        raise RuntimeError(f"New Relic GraphQL request did not complete for account {account_id}")
 
     @staticmethod
     def _extract_value(result):
@@ -84,56 +139,6 @@ class NewRelicDashboardClient:
             return ""
         return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
 
-    @classmethod
-    def _za_monitoring_metric_names(cls):
-        canonical = {
-            "pending payment cancellations",
-            "order fulfilment request failures",
-            "order fullfilment request failures",
-            "order fulfillment request failures",
-            "order fulfilment request failures to read response",
-            "order fullfilment request failures to read response",
-            "order fulfillment request failures to read response",
-            "shipment creation",
-            "shipment creation error",
-            "customer sync to magento error",
-            "contact form error",
-            "inventory sync error",
-        }
-        return {cls._normalize_widget_title(name) for name in canonical}
-
-    @classmethod
-    def _matches_za_metric_name(cls, title: str) -> bool:
-        normalized_title = cls._normalize_widget_title(title)
-        if not normalized_title:
-            return False
-        return normalized_title in cls._za_monitoring_metric_names()
-
-    @staticmethod
-    def _category_for_za_metric(title: str):
-        title_key = NewRelicDashboardClient._normalize_widget_title(title)
-        order_fulfillment = {
-            "pending payment cancellations",
-            "order fulfilment request failures",
-            "order fullfilment request failures",
-            "order fulfillment request failures",
-            "order fulfilment request failures to read response",
-            "order fullfilment request failures to read response",
-            "order fulfillment request failures to read response",
-            "shipment creation",
-            "shipment creation error",
-        }
-        if title_key in order_fulfillment:
-            return "Order Fulfillment"
-        if title_key in {"customer sync to magento error", "contact form error", "inventory sync error"}:
-            return "Integration"
-        return "Monitoring"
-
-    def _should_include_dashboard_widget(self, dashboard_name: str, title: str) -> bool:
-        if "za" not in (dashboard_name or "").lower():
-            return True
-        return self._matches_za_metric_name(title)
-
     @staticmethod
     def _load_dashboard_json(raw_dashboard_json: str) -> str:
         value = (raw_dashboard_json or "").strip()
@@ -149,63 +154,109 @@ class NewRelicDashboardClient:
 
         return value
 
+    def _iter_account_ids(self, query_data: dict):
+        if not isinstance(query_data, dict):
+            return []
+
+        values = []
+        for field in ("accountId", "accountIds"):
+            candidate = query_data.get(field)
+            if candidate is None:
+                continue
+            if isinstance(candidate, list):
+                for item in candidate:
+                    if item is not None:
+                        values.append(str(item).strip())
+            else:
+                values.append(str(candidate).strip())
+
+        if not values:
+            fallback = (self.settings or {}).get("account_id")
+            if fallback:
+                values.append(str(fallback).strip())
+
+        ordered = []
+        seen = set()
+        for account_id in values:
+            if account_id and account_id not in seen:
+                ordered.append(account_id)
+                seen.add(account_id)
+        return ordered
+
     def extract_from_dashboard_json(self):
         dashboard_json = self.settings.get("dashboard_json") or ""
         if not dashboard_json:
             return []
 
-        dashboard_json = self._load_dashboard_json(dashboard_json)
-        dashboard = json.loads(dashboard_json)
+        dashboard = json.loads(self._load_dashboard_json(dashboard_json))
         rows = []
-        dashboard_name = dashboard.get("name", "")
 
-        for page in dashboard.get("pages", []):
-            page_name = page.get("name", "New Relic Dashboard")
-            for widget in page.get("widgets", []):
-                title = (widget.get("title") or "").strip()
-                if not self._should_include_dashboard_widget(dashboard_name, title):
+        for page in dashboard.get("pages", []) or []:
+            if not isinstance(page, dict):
+                continue
+            page_name = (page.get("name") or "New Relic Dashboard").strip() or "New Relic Dashboard"
+            widgets = page.get("widgets", []) or []
+
+            for widget_index, widget in enumerate(widgets):
+                if not isinstance(widget, dict):
+                    warnings.warn(f"Skipping widget #{widget_index} on page '{page_name}' because it is not a JSON object")
                     continue
 
+                title = (widget.get("title") or "").strip() or f"Untitled widget {widget_index + 1}"
                 raw_config = widget.get("rawConfiguration") or {}
                 queries = raw_config.get("nrqlQueries") or []
-                if not title or not queries:
+                if not queries:
+                    warnings.warn(f"Skipping widget '{title}' on page '{page_name}' because it has no NRQL queries")
                     continue
 
-                for query_data in queries:
-                    nrql_query = (query_data or {}).get("query")
+                for query_index, query_data in enumerate(queries):
+                    if not isinstance(query_data, dict):
+                        warnings.warn(
+                            f"Skipping NRQL query #{query_index + 1} for widget '{title}' on page '{page_name}' because it is not a JSON object"
+                        )
+                        continue
+
+                    nrql_query = (query_data.get("query") or "").strip()
                     if not nrql_query:
+                        warnings.warn(f"Skipping empty NRQL query #{query_index + 1} for widget '{title}' on page '{page_name}'")
                         continue
 
-                    account_id = (query_data or {}).get("accountId")
-                    if not account_id:
-                        account_ids = (query_data or {}).get("accountIds") or []
-                        if account_ids:
-                            account_id = account_ids[0]
-                    if not account_id:
-                        account_id = self.settings.get("account_id")
-                    if not account_id:
+                    account_ids = self._iter_account_ids(query_data)
+                    if not account_ids:
+                        warnings.warn(
+                            f"Skipping widget '{title}' on page '{page_name}' because no account ID is associated with the query"
+                        )
                         continue
 
-                    try:
-                        result = self._query_nrql(str(account_id), nrql_query)
-                    except Exception:
-                        continue
+                    for account_id in account_ids:
+                        try:
+                            result = self._query_nrql(str(account_id), nrql_query)
+                        except Exception as exc:  # pragma: no cover - exercised via mocked API responses in tests
+                            warnings.warn(
+                                f"Failed to query widget '{title}' on page '{page_name}' for account {account_id}: {exc}"
+                            )
+                            continue
 
-                    value = self._extract_value(result)
-                    if value is None:
-                        continue
+                        value = self._extract_value(result)
+                        if value is None:
+                            warnings.warn(
+                                f"Widget '{title}' on page '{page_name}' returned no numeric value for account {account_id}; "
+                                "the query result was ignored instead of being treated as zero."
+                            )
+                            continue
 
-                    rows.append(
-                        {
-                            "timestamp": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-                            "category": self._category_for_za_metric(title) if "za" in dashboard_name.lower() else page_name,
-                            "metric_name": title,
-                            "metric_type": "count",
-                            "value": str(value),
-                            "unit": "",
-                            "source": "newrelic api",
-                        }
-                    )
+                        rows.append(
+                            {
+                                "timestamp": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+                                "category": page_name,
+                                "metric_name": title,
+                                "metric_type": "count",
+                                "value": str(value),
+                                "unit": "",
+                                "source": "newrelic api",
+                                "account_id": str(account_id),
+                            }
+                        )
 
         return rows
 
@@ -322,9 +373,35 @@ class NewRelicDashboardClient:
         return build_rows(page_text, metric_rules)
 
     def run(self):
-        if self.settings.get("dashboard_json"):
+        dashboard_json = self.settings.get("dashboard_json") or ""
+        api_key = self.settings.get("api_key") or ""
+        dashboard_url = self.settings.get("dashboard_url") or ""
+        username = self.settings.get("username") or ""
+        password = self.settings.get("password") or ""
+
+        if not dashboard_json and not api_key:
+            raise RuntimeError(
+                "No New Relic data source is configured. Set NEW_RELIC_DASHBOARD_JSON and NEW_RELIC_API_KEY. "
+                "The browser fallback is disabled because it silently produces empty reports in CI."
+            )
+
+        if dashboard_json:
+            if not api_key:
+                raise RuntimeError(
+                    "NEW_RELIC_DASHBOARD_JSON is configured, but NEW_RELIC_API_KEY is missing. "
+                    "Provide a valid New Relic API key to query the dashboard widgets."
+                )
             rows = self.extract_from_dashboard_json()
-        else:
+            print(f"Dashboard JSON detected: length={len(dashboard_json)}")
+            print(f"Rows extracted from dashboard JSON: {len(rows)}")
+            if rows:
+                for row in rows[:5]:
+                    print(row)
+        elif dashboard_url:
+            if not username or not password:
+                raise RuntimeError(
+                    "Browser-mode execution requires NEW_RELIC_USERNAME and NEW_RELIC_PASSWORD when no dashboard JSON is supplied."
+                )
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(headless=True)
                 page = browser.new_page(viewport={"width": 1600, "height": 1200})
@@ -332,6 +409,11 @@ class NewRelicDashboardClient:
                 self.open_dashboard(page)
                 rows = self.extract(page)
                 browser.close()
+        else:
+            raise RuntimeError(
+                "No New Relic data source is configured. Set NEW_RELIC_DASHBOARD_JSON and NEW_RELIC_API_KEY. "
+                "The browser fallback is disabled because it silently produces empty reports in CI."
+            )
 
         writer = ExcelReportWriter(self.settings["output_path"])
         report_path = writer.write(rows)

@@ -32,12 +32,12 @@ jobs:
       - name: Generate New Relic Report
         env:
           NEW_RELIC_BASE_URL: ${{ secrets.NEW_RELIC_BASE_URL }}
+          NEW_RELIC_GRAPHQL_ENDPOINT: ${{ secrets.NEW_RELIC_GRAPHQL_ENDPOINT }}
+          NEW_RELIC_REPORTING_WINDOW: ${{ secrets.NEW_RELIC_REPORTING_WINDOW }}
           NEW_RELIC_DASHBOARD_URL: ${{ secrets.NEW_RELIC_DASHBOARD_URL }}
           NEW_RELIC_DASHBOARD_JSON: ${{ secrets.NEW_RELIC_DASHBOARD_JSON }}
           NEW_RELIC_API_KEY: ${{ secrets.NEW_RELIC_API_KEY }}
           NEW_RELIC_ACCOUNT_ID: ${{ secrets.NEW_RELIC_ACCOUNT_ID }}
-          NEW_RELIC_USERNAME: ${{ secrets.NEW_RELIC_USERNAME }}
-          NEW_RELIC_PASSWORD: ${{ secrets.NEW_RELIC_PASSWORD }}
           OUTPUT_PATH: output/proactive_report.xlsx
         run: |
           mkdir -p output

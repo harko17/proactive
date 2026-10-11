@@ -133,7 +133,7 @@ def test_extract_from_dashboard_json_accepts_long_json_string(monkeypatch):
     assert rows[0]["value"] == "7"
 
 
-def test_extract_from_dashboard_json_filters_za_monitoring_widgets(monkeypatch):
+def test_extract_from_dashboard_json_includes_all_widgets_with_queries(monkeypatch):
     dashboard = {
         "name": "New Proactive Business Monitoring -  ZA  count",
         "pages": [
@@ -173,8 +173,8 @@ def test_extract_from_dashboard_json_filters_za_monitoring_widgets(monkeypatch):
     rows = client.extract_from_dashboard_json()
     metric_names = [row["metric_name"] for row in rows]
 
-    assert "Normal Order Creation" not in metric_names
-    assert "Account confirmation email" not in metric_names
+    assert "Normal Order Creation" in metric_names
+    assert "Account confirmation email" in metric_names
     assert "Pending Payment Cancellations" in metric_names
     assert "Order fulfilment Request - Failures" in metric_names
     assert "Order fulfilment Request - Failures to read response" in metric_names
@@ -192,6 +192,19 @@ def test_excel_report_writer_creates_parent_directory(tmp_path):
 
     assert saved_path == str(target)
     assert target.exists()
+
+
+def test_run_raises_clear_error_when_dashboard_json_and_api_key_missing(tmp_path):
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {
+        "dashboard_json": "",
+        "api_key": "",
+        "dashboard_url": "https://one.newrelic.com/dashboards/detail/test",
+        "output_path": str(tmp_path / "report.xlsx"),
+    }
+
+    with pytest.raises(RuntimeError, match="NEW_RELIC_DASHBOARD_JSON.*NEW_RELIC_API_KEY"):
+        client.run()
 
 
 def test_get_runtime_settings_requires_required_env(monkeypatch):

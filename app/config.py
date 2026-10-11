@@ -29,6 +29,8 @@ def _read_env(name: str, default: str = "") -> str:
 
 
 NEW_RELIC_BASE_URL = _read_env("NEW_RELIC_BASE_URL", "https://one.newrelic.com")
+NEW_RELIC_GRAPHQL_ENDPOINT = _read_env("NEW_RELIC_GRAPHQL_ENDPOINT", "https://api.newrelic.com/graphql")
+NEW_RELIC_REPORTING_WINDOW = _read_env("NEW_RELIC_REPORTING_WINDOW", "24 hours ago")
 NEW_RELIC_DASHBOARD_URL = _read_env("NEW_RELIC_DASHBOARD_URL")
 NEW_RELIC_DASHBOARD_JSON = _read_env("NEW_RELIC_DASHBOARD_JSON")
 NEW_RELIC_API_KEY = _read_env("NEW_RELIC_API_KEY")
@@ -63,6 +65,8 @@ def get_metrics() -> List[MetricRule]:
 
 def get_runtime_settings() -> dict:
     base_url = _read_env("NEW_RELIC_BASE_URL", "https://one.newrelic.com")
+    graphql_endpoint = _read_env("NEW_RELIC_GRAPHQL_ENDPOINT", "https://api.newrelic.com/graphql")
+    reporting_window = _read_env("NEW_RELIC_REPORTING_WINDOW", "24 hours ago")
     dashboard_url = _read_env("NEW_RELIC_DASHBOARD_URL")
     dashboard_json = _read_env("NEW_RELIC_DASHBOARD_JSON")
     api_key = _read_env("NEW_RELIC_API_KEY")
@@ -80,6 +84,8 @@ def get_runtime_settings() -> dict:
 
     return {
         "base_url": base_url,
+        "graphql_endpoint": graphql_endpoint,
+        "reporting_window": reporting_window,
         "dashboard_url": dashboard_url,
         "dashboard_json": dashboard_json,
         "api_key": api_key,

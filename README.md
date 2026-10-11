@@ -6,11 +6,11 @@ It is intended to run on a schedule (for example via cron) and keep a daily or h
 
 ## What the app does
 
-- Opens the New Relic login page
-- Signs in using environment variables
-- Opens a configured dashboard URL
-- Extracts metric values from the page text using regex rules
-- Writes the values to `output/proactive_report.xlsx`
+- Reads the dashboard JSON export or falls back to a browser login flow
+- Extracts widget titles and NRQL queries from the dashboard configuration without hardcoded metric lists
+- Queries New Relic via the NerdGraph GraphQL API with a configured API key and configurable reporting window
+- Normalizes metric values and writes them to `output/proactive_report.xlsx`
+- Supports scheduled execution through GitHub Actions
 
 ## Project structure
 
@@ -52,7 +52,14 @@ playwright install chromium
 cp .env.example .env
 ```
 
-4. Update `.env` with your New Relic credentials and dashboard URL.
+4. Update `.env` with your New Relic credentials and, for JSON mode, your API key and dashboard export.
+
+The project supports two modes:
+
+- JSON mode: set `NEW_RELIC_DASHBOARD_JSON` and `NEW_RELIC_API_KEY`
+- Browser mode: set `NEW_RELIC_DASHBOARD_URL`, `NEW_RELIC_USERNAME`, and `NEW_RELIC_PASSWORD`
+
+If a dashboard query does not already specify a time window, the app appends `SINCE <NEW_RELIC_REPORTING_WINDOW>` automatically. The default is `24 hours ago`.
 
 ## Run once
 

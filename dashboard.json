@@ -1,0 +1,189 @@
+{
+  "name": "New Proactive Business Monitoring -  ZA  count",
+  "description": null,
+  "permissions": "PUBLIC_READ_WRITE",
+  "pages": [
+    {
+      "name": "Monitoring Overview",
+      "description": null,
+      "widgets": [
+        {
+          "title": "",
+          "layout": { "column": 1, "row": 1, "width": 12, "height": 1 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.markdown" },
+          "rawConfiguration": { "text": "# Proactive Business Monitoring Dashboard for ZA\nKey Business areas and their KPIs are monitored." }
+        },
+        {
+          "title": "",
+          "layout": { "column": 1, "row": 2, "width": 12, "height": 1 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.markdown" },
+          "rawConfiguration": { "text": "# Order Creation\n New one time orders, New subscription orders and recurring subscription order creation monitor." }
+        },
+        {
+          "title": "Normal Order Creation",
+          "layout": { "column": 1, "row": 3, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "legend": { "enabled": true }, "linkedEntityGuids": [], "markers": { "displayedTypes": { "criticalViolations": false, "deployments": true, "relatedDeployments": true, "warningViolations": false } }, "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `message` LIKE '%VuseZA-order-count%') TIMESERIES" } ], "platformOptions": { "ignoreTimeRange": false }, "thresholds": { "isLabelVisible": true, "thresholds": [ { "from": -10000, "name": "threshold", "severity": "critical", "to": 0 } ] }, "yAxisLeft": { "zero": true }, "yAxisRight": { "zero": true } }
+        },
+        {
+          "title": "",
+          "layout": { "column": 1, "row": 6, "width": 12, "height": 1 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.markdown" },
+          "rawConfiguration": { "text": "# Order Fulfillment\n Monitoring for orders that can get stuck in different statuses in the lifecycle." }
+        },
+        {
+          "title": "Pending / Processing status",
+          "layout": { "column": 1, "row": 7, "width": 4, "height": 3 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "facet": { "showOtherSeries": false }, "nrqlQueries": [ { "accountId": "6538703", "query": "FROM Log SELECT filter(count(*), WHERE `message` LIKE '%VuseZA-processing-pending-order-count%') TIMESERIES" } ], "platformOptions": { "ignoreTimeRange": false }, "thresholds": { "isLabelVisible": true, "thresholds": [ { "from": 1, "name": "Threshold", "severity": "critical", "to": 10000 } ] } }
+        },
+        {
+          "title": "Awaiting shipment ",
+          "layout": { "column": 5, "row": 7, "width": 4, "height": 3 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "facet": { "showOtherSeries": false }, "nrqlQueries": [ { "accountId": "6538703", "query": "FROM Log SELECT filter(count(*), WHERE `message` LIKE '%VuseZA-awaiting_shipment-order-count%') TIMESERIES" } ], "platformOptions": { "ignoreTimeRange": false }, "thresholds": { "isLabelVisible": true, "thresholds": [ { "from": 1, "name": "Threshold", "severity": "critical", "to": 10000 } ] } }
+        },
+        {
+          "title": "Awaiting Capture / Payment review",
+          "layout": { "column": 9, "row": 7, "width": 4, "height": 3 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "facet": { "showOtherSeries": false }, "nrqlQueries": [ { "accountId": "6538703", "query": "FROM Log SELECT filter(count(*), WHERE `message` LIKE '%VuseZA-pending_payment-order-count%') TIMESERIES" } ], "platformOptions": { "ignoreTimeRange": false }, "thresholds": { "isLabelVisible": true, "thresholds": [ { "from": 1, "name": "Threshold", "severity": "critical", "to": 10000 } ] } }
+        },
+        {
+          "title": "Pending Payment Cancellations",
+          "layout": { "column": 1, "row": 10, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "linkedEntityGuids": [], "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "SELECT count(*) FROM Log WHERE `message` LIKE '%Could not find payment for order%' AND `filePath` = '/data/magento/public/var/log/worldpay.log' " } ], "platformOptions": { "ignoreTimeRange": false }, "thresholdsWithSeriesOverrides": { "thresholds": [ { "from": 1, "severity": "critical", "to": 10000 } ] } }
+        },
+        {
+          "title": "Order fullfilment Request - Trend",
+          "layout": { "column": 5, "row": 10, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "linkedEntityGuids": [], "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `filePath` = '/data/exports/local/bpxesnxevub6a/log/bat_order_fulfilment.log' AND `message` LIKE '%vuse_za_en_za%' AND `message` LIKE '%BAT_OrderFulfilment Logger.INFO: API request%')" } ], "platformOptions": { "ignoreTimeRange": false }, "thresholdsWithSeriesOverrides": { "thresholds": [ { "from": -10000, "severity": "critical", "to": 0 } ] } }
+        },
+        {
+          "title": "Order fullfilment Request - Failures",
+          "layout": { "column": 9, "row": 10, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "linkedEntityGuids": [], "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `filePath` = '/data/exports/local/bpxesnxevub6a/log/bat_order_fulfilment.log' AND `message` LIKE '%BAT_OrderFulfilment%' AND `message` LIKE '%API unsuccessful response:%') " } ], "platformOptions": { "ignoreTimeRange": false }, "thresholdsWithSeriesOverrides": { "thresholds": [ { "from": 1, "severity": "critical", "to": 10000 } ] } }
+        },
+        {
+          "title": "Order fullfilment Request - Failures to read response",
+          "layout": { "column": 1, "row": 13, "width": 6, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "linkedEntityGuids": [], "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `filePath` = '/data/exports/local/bpxesnxevub6a/log/bat_order_fulfilment.log' AND `message` LIKE '%Unable to read response%' AND `message` LIKE '%BAT_OrderFulfilment%') " } ], "platformOptions": { "ignoreTimeRange": false }, "thresholdsWithSeriesOverrides": { "thresholds": [ { "from": 1, "severity": "critical", "to": 10000 } ] } }
+        },
+        {
+          "title": "Order fullfilment Request - Upload to courier failed",
+          "layout": { "column": 7, "row": 13, "width": 6, "height": 3 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "legend": { "enabled": true }, "markers": { "displayedTypes": { "annotations": true, "criticalViolations": false, "deployments": true, "relatedDeployments": true, "warningViolations": false } }, "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `message` LIKE '%VuseZA-Order-Fulfilment-Failed:%') TIMESERIES " } ], "platformOptions": { "ignoreTimeRange": false }, "thresholds": { "isLabelVisible": true, "thresholds": [ { "from": 0, "name": "Critical", "severity": "critical", "to": 10000 } ] }, "yAxisLeft": { "zero": true }, "yAxisRight": { "zero": true } }
+        },
+        {
+          "title": "Shipment creation",
+          "layout": { "column": 1, "row": 16, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "linkedEntityGuids": [], "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `filePath` LIKE '/var/log/platform/bpxesnxevub6a/access.log' AND `message` LIKE '%/rest/vuse_za_en_za/async/V1/order/%/ship%') " } ], "platformOptions": { "ignoreTimeRange": false }, "thresholdsWithSeriesOverrides": { "thresholds": [ { "from": -100000, "severity": "severe", "to": 0 } ] } }
+        },
+        {
+          "title": "Shipment creation error",
+          "layout": { "column": 5, "row": 16, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "linkedEntityGuids": [], "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `filePath` LIKE '/var/log/platform/bpxesnxevub6a/access.log' AND `message` LIKE '%/rest/vuse_za_en_za/async/V1/order/%/ship%' AND `message` NOT LIKE '%HTTP/1.%\" 2%') " } ], "platformOptions": { "ignoreTimeRange": false } }
+        },
+        {
+          "title": "",
+          "layout": { "column": 1, "row": 19, "width": 12, "height": 1 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.markdown" },
+          "rawConfiguration": { "text": "# Integration\n Monitoring for data flow to other third party integrations." }
+        },
+        {
+          "title": "Customer creation sync to CRM - Trend",
+          "layout": { "column": 1, "row": 20, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "legend": { "enabled": true }, "linkedEntityGuids": [], "markers": { "displayedTypes": { "criticalViolations": false, "deployments": true, "relatedDeployments": true, "warningViolations": false } }, "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `filePath` = '/data/exports/local/bpxesnxevub6a/log/support_report.log' AND `message` LIKE '%MCME_REG_010%' AND `message` LIKE '%vuse_za_en_za%') TIMESERIES" } ], "platformOptions": { "ignoreTimeRange": false }, "thresholds": { "isLabelVisible": true, "thresholds": [ { "from": -10000, "name": "Threshold", "severity": "critical", "to": 0 } ] }, "yAxisLeft": { "zero": true }, "yAxisRight": { "zero": true } }
+        },
+        {
+          "title": "Customer Sync to Magento - Error",
+          "layout": { "column": 5, "row": 20, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "linkedEntityGuids": [], "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `filePath` = '/var/log/platform/bpxesnxevub6a/access.log' AND `message` LIKE '%\"PUT /rest/vuse_za_en_za/V1/customers%' AND `message` NOT LIKE '%HTTP/1.%\" 20%') " } ], "platformOptions": { "ignoreTimeRange": false }, "thresholdsWithSeriesOverrides": { "thresholds": [ { "from": 1, "severity": "critical", "to": 100000 } ] } }
+        },
+        {
+          "title": "Order creation sync to CRM - Trend",
+          "layout": { "column": 9, "row": 20, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "legend": { "enabled": true }, "linkedEntityGuids": [], "markers": { "displayedTypes": { "criticalViolations": false, "deployments": true, "relatedDeployments": true, "warningViolations": false } }, "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT filter(count(*), WHERE `filePath` = '/data/exports/local/bpxesnxevub6a/log/support_report.log' AND `message` LIKE '%MCME_ORC_036%' AND `message` LIKE '%vuse_za_en_za%') TIMESERIES" } ], "platformOptions": { "ignoreTimeRange": false }, "thresholds": { "isLabelVisible": true, "thresholds": [ { "from": -10000, "name": "Threshold", "severity": "critical", "to": 0 } ] }, "yAxisLeft": { "zero": true }, "yAxisRight": { "zero": true } }
+        },
+        {
+          "title": "Contact Form - Error",
+          "layout": { "column": 1, "row": 23, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "linkedEntityGuids": [], "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT count(*) WHERE `filePath` = '/data/exports/local/bpxesnxevub6a/log/support_report.log' AND `message` LIKE '%ContactFormSend API response%' AND `message` NOT LIKE '%200%' " } ], "platformOptions": { "ignoreTimeRange": false }, "thresholdsWithSeriesOverrides": { "thresholds": [ { "from": 1, "severity": "critical", "to": 10000 } ] } }
+        },
+        {
+          "title": "Inventory Sync error",
+          "layout": { "column": 5, "row": 23, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "linkedEntityGuids": [], "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "FROM Log SELECT count(*) WHERE `message` LIKE '%POST /rest/vuse_za_en_za/V1/inventory/source-items%' AND `message`  LIKE '%HTTP/1.1\" 5%' AND `filePath` = '/var/log/platform/bpxesnxevub6a/access.log' " } ], "platformOptions": { "ignoreTimeRange": false }, "thresholdsWithSeriesOverrides": { "thresholds": [ { "from": 1, "severity": "critical", "to": 100000 } ] } }
+        },
+        {
+          "title": "Customer without SF ID",
+          "layout": { "column": 9, "row": 23, "width": 4, "height": 3 },
+          "linkedEntityGuids": [],
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "chartStyles": { "lineInterpolation": "linear" }, "facet": { "showOtherSeries": false }, "legend": { "enabled": true }, "linkedEntityGuids": [], "markers": { "displayedTypes": { "criticalViolations": false, "deployments": true, "relatedDeployments": true, "warningViolations": false } }, "nrqlQueries": [ { "accountIds": [ 6538703 ], "query": "SELECT count(*)  FROM Log WHERE `message` LIKE '%ZA-customer-without SF id%' TIMESERIES " } ], "platformOptions": { "ignoreTimeRange": false }, "thresholds": { "isLabelVisible": true, "thresholds": [ { "from": 1, "name": "Threshold", "severity": "critical", "to": 10000 } ] }, "yAxisLeft": { "zero": true }, "yAxisRight": { "zero": true } }
+        },
+        {
+          "title": "",
+          "layout": { "column": 1, "row": 26, "width": 12, "height": 1 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.markdown" },
+          "rawConfiguration": { "text": "# Transactional Email\n Monitoring for transactional email flow." }
+        },
+        {
+          "title": "Account confirmation email",
+          "layout": { "column": 1, "row": 27, "width": 4, "height": 3 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "facet": { "showOtherSeries": false }, "nrqlQueries": [ { "accountId": "6538703", "query": "FROM Log SELECT filter(count(*), WHERE `message` LIKE '%VuseZA-account-confirmation-email-count :%') TIMESERIES" } ], "platformOptions": { "ignoreTimeRange": false } }
+        },
+        {
+          "title": "Order confirmation email",
+          "layout": { "column": 5, "row": 27, "width": 4, "height": 3 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "facet": { "showOtherSeries": false }, "nrqlQueries": [ { "accountId": "6538703", "query": "FROM Log SELECT filter(count(*), WHERE `message` LIKE '%VuseZA-order-confirmation-email-count :%') TIMESERIES" } ], "platformOptions": { "ignoreTimeRange": false } }
+        },
+        {
+          "title": "Invoice Confirmation Email",
+          "layout": { "column": 9, "row": 27, "width": 4, "height": 3 },
+          "linkedEntityGuids": null,
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": { "facet": { "showOtherSeries": false }, "nrqlQueries": [ { "accountId": "6538703", "query": "FROM Log SELECT filter(count(*), WHERE `message` LIKE '%VuseZA-invoice-confirmation-email-count :%') TIMESERIES" } ], "platformOptions": { "ignoreTimeRange": false } }
+        }
+      ]
+    }
+  ],
+  "variables": []
+}
