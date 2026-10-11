@@ -24,55 +24,13 @@ class NewRelicDashboardClient:
     def __init__(self):
         self.settings = get_runtime_settings()
 
-    @staticmethod
-    def _apply_reporting_window(query: str, reporting_window: str = "24 hours ago") -> str:
-        query_text = (query or "").strip()
-        if not query_text:
-            return query_text
-        if re.search(r"\bSINCE\b|\bUNTIL\b|\bCOMPARE\b", query_text, flags=re.IGNORECASE):
-            return query_text
-        if re.search(r"\bTIMESERIES\b", query_text, flags=re.IGNORECASE):
-            return re.sub(r"\bTIMESERIES\b", f"SINCE {reporting_window} TIMESERIES", query_text, count=1, flags=re.IGNORECASE)
-        return f"{query_text} SINCE {reporting_window}"
-
-    @staticmethod
-    def _build_graphql_batch(entries: list[dict], reporting_window: str) -> tuple[str, dict]:
-        definitions = []
-        selections = []
-        variables = {}
-        for index, entry in enumerate(entries):
-            alias = f"metric_{index}"
-            variable = f"nrql_{index}"
-            account_id = str(entry["account_id"])
-            if not account_id.isdigit() or int(account_id) <= 0:
-                raise ValueError(f"Invalid New Relic account ID in dashboard configuration: {account_id!r}")
-            definitions.append(f"${variable}: String!")
-            selections.append(
-                f"{alias}: account(id: {int(account_id)}) "
-                f"{{ nrql(query: ${variable}) {{ results }} }}"
-            )
-            variables[variable] = NewRelicDashboardClient._apply_reporting_window(
-                entry["query"], reporting_window
-            )
-            entry["alias"] = alias
-
-        graphql_query = (
-            f"query DashboardMetrics({', '.join(definitions)}) "
-            f"{{ actor {{ {' '.join(selections)} }} }}"
-        )
-        return graphql_query, variables
-
-    def _query_nrql_batch(self, entries: list[dict]) -> dict:
+    def _send_graphql_payload(self, payload: dict, entries: list[dict]) -> dict:
         if not entries:
             return {}
         api_key = self.settings.get("api_key")
         if not api_key:
             raise ValueError("Set the NEW_RELIC_API_KEY GitHub Actions secret to query New Relic.")
 
-        graphql_query, variables = self._build_graphql_batch(
-            entries, self.settings.get("reporting_window", "24 hours ago")
-        )
-        payload = {"query": graphql_query, "variables": variables}
         endpoint = self.settings.get("graphql_endpoint", "https://api.newrelic.com/graphql")
 
         for attempt in range(4):
@@ -109,7 +67,9 @@ class NewRelicDashboardClient:
                 response_data = response.json()
             except ValueError as exc:
                 raise RuntimeError("New Relic returned a non-JSON GraphQL response.") from exc
-            return self._extract_graphql_batch_results(response_data, entries)
+            if not isinstance(response_data, dict):
+                raise RuntimeError("New Relic returned a GraphQL response with an invalid JSON shape.")
+            return response_data
 
         raise RuntimeError("New Relic GraphQL request did not complete.")
 
@@ -154,15 +114,30 @@ class NewRelicDashboardClient:
                 return None
             return NewRelicDashboardClient._extract_value(result[-1])
         if isinstance(result, dict):
-            for key in ("count", "result", "value", "total", "latest", "average", "max", "min", "sum"):
-                if key in result:
-                    return NewRelicDashboardClient._extract_value(result[key])
-            if len(result) == 1:
-                return NewRelicDashboardClient._extract_value(next(iter(result.values())))
-            for value in result.values():
-                parsed = NewRelicDashboardClient._extract_value(value)
-                if parsed is not None:
-                    return parsed
+            keys = list(result)
+            preferred_keys = (
+                "count",
+                "uniqueCount",
+                "sum",
+                "average",
+                "max",
+                "min",
+                "latest",
+                "total",
+                "result",
+                "value",
+            )
+            measurement_key = next((key for key in preferred_keys if key in result), None)
+            if measurement_key is None:
+                measurement_key = next(
+                    (
+                        key for prefix in ("count.", "uniqueCount.", "sum.", "average.", "max.", "min.")
+                        for key in keys if key.startswith(prefix)
+                    ),
+                    None,
+                )
+            if measurement_key is not None:
+                return NewRelicDashboardClient._extract_value(result[measurement_key])
             return None
         if isinstance(result, (int, float)):
             return result
@@ -228,20 +203,6 @@ class NewRelicDashboardClient:
         return value, None, "OK" if value is not None else "No numeric result"
 
     @staticmethod
-    def _metric_type(title: str, query: str, visualization: str) -> str:
-        normalized_title = NewRelicDashboardClient._normalize_widget_title(title)
-        for rule in get_metrics():
-            normalized_rule = NewRelicDashboardClient._normalize_widget_title(rule.name)
-            if normalized_title == normalized_rule or normalized_title.startswith(f"{normalized_rule} "):
-                return rule.metric_type
-
-        if re.search(r"\bTIMESERIES\b", query, flags=re.IGNORECASE) or visualization == "viz.line":
-            return "trend"
-        if re.search(r"\blatest\s*\(", query, flags=re.IGNORECASE):
-            return "latest value"
-        return "count"
-
-    @staticmethod
     def _dashboard_row(
         dashboard_name: str,
         dashboard_url: str,
@@ -271,212 +232,65 @@ class NewRelicDashboardClient:
             "status": status,
         }
 
-    @staticmethod
-    def _normalize_widget_title(title: str) -> str:
-        if not title:
-            return ""
-        return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+    def _load_curl_request(self) -> tuple[dict, list[dict]]:
+        curl_path = Path(self.settings["curl_file"])
+        curl_document = curl_path.read_text(encoding="utf-8")
+        body_match = re.search(r"\$body\s*=\s*@'\s*\r?\n([\s\S]*?)\r?\n'@", curl_document)
+        if not body_match:
+            raise ValueError(f"Could not find the --data-raw JSON body in {curl_path}")
+        payload = json.loads(body_match.group(1))
+        if not isinstance(payload, dict):
+            raise ValueError(f"The cURL request body in {curl_path} must be a JSON object")
+        graphql_query = payload.get("query")
+        if not isinstance(graphql_query, str):
+            raise ValueError(f"The cURL request in {curl_path} has no GraphQL query")
 
-    @staticmethod
-    def _load_dashboard_json(raw_dashboard_json: str) -> str:
-        value = (raw_dashboard_json or "").strip()
-        if not value:
-            return ""
-
-        if value.startswith("{") or value.startswith("["):
-            return value
-
-        dashboard_path = Path(value)
-        if dashboard_path.exists():
-            return dashboard_path.read_text(encoding="utf-8")
-
-        raise FileNotFoundError(f"Dashboard JSON file not found: {dashboard_path}")
-
-    def _iter_account_ids(self, query_data: dict):
-        if not isinstance(query_data, dict):
-            return []
-
-        values = []
-        for field in ("accountId", "accountIds"):
-            candidate = query_data.get(field)
-            if candidate is None:
-                continue
-            if isinstance(candidate, list):
-                for item in candidate:
-                    if item is not None:
-                        values.append(str(item).strip())
-            else:
-                values.append(str(candidate).strip())
-
-        ordered = []
-        seen = set()
-        for account_id in values:
-            if account_id and account_id not in seen:
-                ordered.append(account_id)
-                seen.add(account_id)
-        return ordered
-
-    def extract_from_dashboard_json(self):
-        dashboard_json = self.settings["dashboard_json"]
-        dashboard = json.loads(self._load_dashboard_json(dashboard_json))
-        ordered_items = []
+        selection_pattern = re.compile(
+            r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*account\(id:\s*(\d+)\)\s*"
+            r"\{\s*nrql\(query:\s*(\"(?:\\.|[^\"\\])*\")\)\s*\{\s*results\s*\}\s*\}"
+        )
         entries = []
-        dashboard_name = dashboard.get("name") or "New Relic Dashboard"
+        for alias, account_id, encoded_nrql in selection_pattern.findall(graphql_query):
+            if int(account_id) <= 0:
+                raise ValueError(f"Invalid New Relic account ID {account_id!r} for alias {alias!r}")
+            metric = next((item for item in get_metrics() if item.alias == alias), None)
+            if metric is None:
+                raise ValueError(f"No report label is configured for GraphQL alias {alias!r}")
+            entries.append({
+                "alias": alias,
+                "account_id": account_id,
+                "query": json.loads(encoded_nrql),
+                "dashboard_name": "Japan",
+                "page": "Monitoring",
+                "category": metric.category,
+                "metric_name": metric.name,
+                "visualization": "",
+                "metric_type": metric.metric_type,
+            })
 
-        for page in dashboard.get("pages", []) or []:
-            if not isinstance(page, dict):
-                continue
-            page_name = (page.get("name") or "New Relic Dashboard").strip() or "New Relic Dashboard"
-            category = page_name
-            category_headings = []
-            widgets = page.get("widgets", []) or []
+        expected_aliases = {item.alias for item in get_metrics()}
+        actual_aliases = {entry["alias"] for entry in entries}
+        if len(entries) != len(expected_aliases) or actual_aliases != expected_aliases:
+            missing = sorted(expected_aliases - actual_aliases)
+            unexpected = sorted(actual_aliases - expected_aliases)
+            raise ValueError(
+                f"GraphQL widget set in {curl_path} is incomplete or has duplicates "
+                f"(missing={missing}, unexpected={unexpected})"
+            )
+        entries.sort(key=lambda entry: next(
+            index for index, metric in enumerate(get_metrics()) if metric.alias == entry["alias"]
+        ))
+        return payload, entries
 
-            for widget_index, widget in enumerate(widgets):
-                if not isinstance(widget, dict):
-                    warnings.warn(f"Skipping widget #{widget_index} on page '{page_name}' because it is not a JSON object")
-                    continue
-
-                title = (widget.get("title") or "").strip() or f"Untitled widget {widget_index + 1}"
-                raw_config = widget.get("rawConfiguration")
-                if not isinstance(raw_config, dict):
-                    raw_config = {}
-                visualization_data = widget.get("visualization")
-                visualization = visualization_data.get("id", "") if isinstance(visualization_data, dict) else ""
-                if visualization == "viz.markdown":
-                    markdown_text = raw_config.get("text") or ""
-                    headings = re.findall(r"^\s{0,3}(#{1,6})\s+(.+?)\s*$", markdown_text, flags=re.MULTILINE)
-                    for marker, heading in headings:
-                        heading = heading.strip()
-                        level = len(marker)
-                        if "dashboard" in heading.lower():
-                            category_headings = []
-                            continue
-                        category_headings = [
-                            entry for entry in category_headings if entry[0] < level
-                        ]
-                        category_headings.append((level, heading))
-                    category = " / ".join(heading for _, heading in category_headings) or page_name
-                    continue
-
-                queries = raw_config.get("nrqlQueries") or []
-                if not isinstance(queries, list):
-                    queries = [queries]
-                if not queries:
-                    warnings.warn(f"Skipping widget '{title}' on page '{page_name}' because it has no NRQL queries")
-                    ordered_items.append(
-                        self._dashboard_row(
-                            dashboard_name,
-                            "",
-                            page_name,
-                            category,
-                            title,
-                            visualization,
-                            self._metric_type(title, "", visualization),
-                            status="No NRQL query",
-                        )
-                    )
-                    continue
-
-                for query_index, query_data in enumerate(queries):
-                    if not isinstance(query_data, dict):
-                        warnings.warn(
-                            f"NRQL query #{query_index + 1} for widget '{title}' on page '{page_name}' is not a JSON object"
-                        )
-                        ordered_items.append(
-                            self._dashboard_row(
-                                dashboard_name,
-                                "",
-                                page_name,
-                                category,
-                                title,
-                                visualization,
-                                self._metric_type(title, "", visualization),
-                                status="Invalid NRQL configuration",
-                            )
-                        )
-                        continue
-
-                    nrql_query = (query_data.get("query") or "").strip()
-                    if not nrql_query:
-                        warnings.warn(f"Skipping empty NRQL query #{query_index + 1} for widget '{title}' on page '{page_name}'")
-                        ordered_items.append(
-                            self._dashboard_row(
-                                dashboard_name,
-                                "",
-                                page_name,
-                                category,
-                                title,
-                                visualization,
-                                self._metric_type(title, "", visualization),
-                                status="Empty NRQL query",
-                            )
-                        )
-                        continue
-
-                    account_ids = self._iter_account_ids(query_data)
-                    if not account_ids:
-                        warnings.warn(
-                            f"No account ID is associated with widget '{title}' on page '{page_name}'"
-                        )
-                        ordered_items.append(
-                            self._dashboard_row(
-                                dashboard_name,
-                                "",
-                                page_name,
-                                category,
-                                title,
-                                visualization,
-                                self._metric_type(title, nrql_query, visualization),
-                                status="No account ID",
-                            )
-                        )
-                        continue
-
-                    for account_id in account_ids:
-                        if not str(account_id).isdigit() or int(account_id) <= 0:
-                            warnings.warn(f"Invalid account ID {account_id!r} for widget '{title}'")
-                            ordered_items.append(
-                                self._dashboard_row(
-                                    dashboard_name, "", page_name, category, title, visualization,
-                                    self._metric_type(title, nrql_query, visualization),
-                                    account_id=str(account_id), status="Invalid account ID"
-                                )
-                            )
-                            continue
-                        metric_type = self._metric_type(title, nrql_query, visualization)
-                        entry = {
-                            "account_id": str(account_id),
-                            "query": nrql_query,
-                            "dashboard_name": dashboard_name,
-                            "page": page_name,
-                            "category": category,
-                            "metric_name": title,
-                            "visualization": visualization,
-                            "metric_type": metric_type,
-                        }
-                        entry["alias"] = f"metric_{len(entries)}"
-                        entries.append(entry)
-                        ordered_items.append(entry)
-
-        try:
-            results_by_alias = self._query_nrql_batch(entries)
-        except Exception as exc:
-            warnings.warn(f"New Relic batch request failed: {exc}")
-            results_by_alias = {
-                entry["alias"]: {"error": str(exc)}
-                for entry in entries
-            }
-
+    def _rows_from_graphql_response(self, response_data: dict, entries: list[dict]) -> list[dict]:
+        results_by_alias = self._extract_graphql_batch_results(response_data, entries)
         rows = []
-        for item in ordered_items:
-            if "alias" not in item:
-                rows.append(item)
-                continue
-            entry = item
-            response = results_by_alias.get(entry["alias"], {"error": "No response for query"})
-            if "error" in response:
+        for entry in entries:
+            result = results_by_alias[entry["alias"]]
+            if "error" in result:
                 warnings.warn(
-                    f"Query failed for widget '{entry['metric_name']}' and account {entry['account_id']}: {response['error']}"
+                    f"Query failed for widget '{entry['metric_name']}' "
+                    f"and account {entry['account_id']}: {result['error']}"
                 )
                 row = self._dashboard_row(
                     entry["dashboard_name"], "", entry["page"], entry["category"],
@@ -484,7 +298,7 @@ class NewRelicDashboardClient:
                     account_id=entry["account_id"], status="Query failed",
                 )
             else:
-                value, timestamp, status = self._extract_report_value(response["results"])
+                value, timestamp, status = self._extract_report_value(result["results"])
                 row = self._dashboard_row(
                     entry["dashboard_name"], "", entry["page"], entry["category"],
                     entry["metric_name"], entry["visualization"], entry["metric_type"],
@@ -494,8 +308,10 @@ class NewRelicDashboardClient:
         return rows
 
     def run(self):
-        rows = self.extract_from_dashboard_json()
-        print(f"Dashboard query rows prepared: {len(rows)}")
+        payload, entries = self._load_curl_request()
+        response = self._send_graphql_payload(payload, entries)
+        rows = self._rows_from_graphql_response(response, entries)
+        print(f"Japan dashboard query rows prepared: {len(rows)}")
         writer = ExcelReportWriter(self.settings["output_path"])
         report_path = writer.write(rows)
         failed_rows = [

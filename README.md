@@ -1,26 +1,27 @@
-# Proactive
+# Proactive Japan monitoring report
 
-Generate an Excel report from a checked-in New Relic dashboard JSON export and live NRQL results from New Relic NerdGraph.
+This project submits the GraphQL POST documented in [CURLS.md](./CURLS.md) to New Relic NerdGraph and writes the returned NRQL counts to `output/proactive_report.xlsx`.
 
-## Data and credentials
+## Source of truth
 
-- `dashboard.json` is the source of truth for widget names, NRQL queries, and the account ID attached to each query. Replace it with the export for the dashboard you want to report on.
-- The only New Relic credential required is a New Relic **User API key**. Do not put the key in `dashboard.json` or commit a populated `.env`.
-- The app sends one GraphQL POST to `https://api.newrelic.com/graphql`, using an `API-Key` header and JSON request body. Each dashboard query is sent as a GraphQL alias with its own account ID and NRQL variable.
-- NRQL queries retain their own time range. Queries without one get `SINCE 24 hours ago`.
+- `CURLS.md` contains the exact request body, all 34 widget aliases, their NRQL queries, and their New Relic account IDs. The application reads that body and sends it unchanged.
+- `response.md` is a saved example of the expected GraphQL response for reference; production report values always come from the live API response.
+- Widget names, report categories, and metric types are defined in `app/config.py`; query strings and account IDs are not duplicated there.
 
-### GitHub Actions setup
+The response parser associates each result with the matching GraphQL alias. It reads numeric result fields such as `count`, `count.message`, and `uniqueCount.message`; timestamp fields are never treated as metrics.
 
-Add one repository secret:
+## Configure credentials
+
+The only required New Relic credential is a User API key. Add it as a repository secret:
 
 1. Open **Settings → Secrets and variables → Actions**.
 2. Select **New repository secret**.
-3. Set **Name** to `NEW_RELIC_API_KEY`.
-4. Set **Secret** to the New Relic User API key value (paste the key only; no quotes or `API-Key:` prefix).
+3. Set the name to `NEW_RELIC_API_KEY`.
+4. Set the value to the API key itself—without quotes or an `API-Key:` prefix.
 
-The workflow uses the dashboard JSON committed in the repository. Confirm that `dashboard.json` contains the intended dashboard export and that the API key can query every account ID in it. The workflow runs hourly and can also be started manually. It uploads the workbook as an artifact; it commits a report only when all New Relic queries succeed.
+The same environment variable can be set for a local run. Do not commit the real key.
 
-For a local run, install dependencies and provide `NEW_RELIC_API_KEY` in the process environment or an untracked `.env` file. `.env.example` shows the single required variable.
+## Run
 
 ```bash
 python -m venv .venv
@@ -28,6 +29,6 @@ python -m pip install -r requirements.txt
 python -m app.newrelic_client
 ```
 
-The workbook is written to `output/proactive_report.xlsx`. Set `OUTPUT_PATH` to override its location.
+The output path defaults to `output/proactive_report.xlsx`; set `OUTPUT_PATH` to change it. GitHub Actions runs hourly or by manual dispatch, uploads the workbook, and commits it only after a successful API/report run.
 
-For timestamped NRQL results, the report scans from newest to oldest and selects the latest non-zero bucket. If all buckets are zero, the value stays blank; a single aggregate result of `count: 0` remains zero. See [EXCEL_REPORT.md](./EXCEL_REPORT.md) for the workbook layout and result-selection rules.
+For a multi-bucket time series, the report scans newest to oldest and records the latest positive value and its bucket timestamp. If all buckets are zero, the value is blank. A single aggregate result of `count: 0` remains zero. See [EXCEL_REPORT.md](./EXCEL_REPORT.md) for report details.

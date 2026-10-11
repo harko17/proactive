@@ -1,1 +1,1 @@
-"""Proactive New Relic dashboard exporter."""
+"""New Relic Japan monitoring report generator."""

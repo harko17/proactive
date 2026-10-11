@@ -1,48 +1,47 @@
 # Excel report generation
 
-The application reads the checked-in `dashboard.json`, queries its NRQL widgets through New Relic NerdGraph, and writes `output/proactive_report.xlsx`. The API endpoint is `https://api.newrelic.com/graphql`; the only credential is `NEW_RELIC_API_KEY`, sent as the `API-Key` HTTP header.
+The application sends the exact GraphQL request in `CURLS.md` to `https://api.newrelic.com/graphql` and writes the live response values to `output/proactive_report.xlsx`. The saved response in `response.md` is for reference only; it is never used as the production data source.
 
-## Data flow
+## Data and result mapping
 
-1. The dashboard export supplies the dashboard name, page and widget titles, markdown category headings, NRQL text, and account IDs.
-2. The client skips markdown widgets as report values, but uses their headings as categories. It retains rows for non-markdown widgets even when query configuration, account IDs, or usable result values are missing.
-3. Every valid query/account pair is included in one GraphQL POST as an aliased `account(id: ...) { nrql(query: $variable) { results } }` selection. The account ID remains paired with that query.
-4. GraphQL `results` are mapped back to the widget row using the response alias. Values are extracted from actual results; API errors do not become numeric zeroes.
-5. The Excel writer renders each query/account row in the `Dashboard Summary` sheet.
+The request contains 34 aliased NRQL queries. Each alias is associated with the account ID in that query and mapped to its report label/category in `app/config.py`. The report includes every alias, including values that are zero or unavailable.
 
-The committed `dashboard.json` must be the intended New Relic dashboard export. The API key must have access to every account referenced by its query definitions.
+Response results may contain aggregate counts such as `{"count": 15}` or time-series buckets such as:
+
+```json
+[
+  {"beginTimeSeconds": 1791686399, "endTimeSeconds": 1791688199, "count": 0},
+  {"beginTimeSeconds": 1791688199, "endTimeSeconds": 1791689999, "count": 0},
+  {"beginTimeSeconds": 1791689999, "endTimeSeconds": 1791691799, "count": 1},
+  {"beginTimeSeconds": 1791691799, "endTimeSeconds": 1791693599, "count": 0}
+]
+```
+
+For timestamped buckets, the app scans from newest to oldest and reports the latest non-zero metric value—in this example, `1`—along with that bucket's timestamp. It recognizes count-shaped keys including `count`, `count.message`, and `uniqueCount.message`. Timestamp fields are excluded from metric extraction.
+
+- A single aggregate `{"count": 0}` is a real result and is written as numeric zero.
+- An all-zero time series produces a blank value with status `No non-zero value`.
+- A failed GraphQL query produces a blank cell and a warning; the run fails after saving the report rather than presenting a failed query as zero.
 
 ## Workbook layout
 
-The workbook has one sheet, **Dashboard Summary**:
+The **Dashboard Summary** sheet has four columns:
 
 | Column | Contents |
 | --- | --- |
-| A | Category from dashboard markdown headings |
+| A | Monitoring category |
 | B | Widget title |
-| C | Metric type (`count`, `latest value`, or `trend`) |
-| D | Numeric result, or blank when no usable result exists |
+| C | `count`, `latest value`, or `trend` |
+| D | Numeric value from the API, or blank when no non-zero series result is available |
 
-The first row contains the dashboard title and “Monitoring.” Category cells are merged across consecutive widgets in the same category. Account ID, query status, and source timestamp remain part of the internal row model rather than adding columns to the compact workbook.
+The title row reads **Japan - Monitoring charts** and **Monitoring**. Adjacent rows in the same category share a merged category cell. Account IDs, status, and timestamps remain in the internal result rows so the visible workbook retains the compact dashboard-like layout.
 
-## Result selection and time window
+## Run and credentials
 
-- A single aggregate response such as `{"count": 0}` is reported as numeric zero.
-- For multiple timestamped result buckets, buckets are scanned newest to oldest and the latest positive numeric value is selected with its timestamp.
-- If every timestamped bucket is zero, the value is blank and status is `No non-zero value`.
-- Missing or failed query results stay blank; query failures are warned about, and the run fails after saving the workbook so Actions does not report a false success.
-- A query's explicit NRQL time range is retained. When it has no `SINCE`, `UNTIL`, or `COMPARE` clause, `SINCE 24 hours ago` is added.
+Set `NEW_RELIC_API_KEY` to a New Relic User API key. GitHub Actions expects it as the repository secret with exactly that name. The GraphQL endpoint is fixed to `https://api.newrelic.com/graphql`.
 
-## Preview
+Run locally with:
 
-The sample values below illustrate the layout only; report values come from the API response.
-
-| Japan - Monitoring charts |  | **Monitoring** |  |
-| --- | --- | --- | ---: |
-| Order Creation | Normal Order Creation | count | 312 |
-|  | Pending / Processing status | latest value | 9 |
-|  | Awaiting shipment | latest value | 9 |
-|  | Awaiting Capture / Payment review | latest value | 1 |
-|  | Pending Payment Cancellations | count | 0 |
-
-The category shown in column A is merged in Excel when adjacent rows share it.
+```bash
+python -m app.newrelic_client
+```
