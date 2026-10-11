@@ -1,84 +1,48 @@
-# How the Excel report is generated
+# Excel report generation
 
-The application creates `output/proactive_report.xlsx` using the dashboard JSON export and live NRQL results from New Relic. The workbook is written by `app/report.py`; widget parsing and API querying happen in `app/newrelic_client.py`.
+The application reads the checked-in `dashboard.json`, queries its NRQL widgets through New Relic NerdGraph, and writes `output/proactive_report.xlsx`. The API endpoint is `https://api.newrelic.com/graphql`; the only credential is `NEW_RELIC_API_KEY`, sent as the `API-Key` HTTP header.
 
 ## Data flow
 
-1. The application reads the dashboard JSON from `NEW_RELIC_DASHBOARD_JSON` (either JSON text or a path to a JSON file).
-2. It visits every page and widget, skipping markdown widgets and widgets without executable NRQL queries.
-3. Each query is sent to New Relic NerdGraph using the account ID associated with that query. A query with multiple account IDs is queried once for each account.
-4. Results are read from NerdGraph's `data.actor.account.nrql.results` response field. Numeric fields such as `count` are written as numeric Excel values; the workbook does not derive live values from dashboard configuration or hardcoded metric values.
-5. A row is prepared for each successfully executed query/account pair and written to the `Dashboard Summary` sheet.
+1. The dashboard export supplies the dashboard name, page and widget titles, markdown category headings, NRQL text, and account IDs.
+2. The client skips markdown widgets as report values, but uses their headings as categories. It retains rows for non-markdown widgets even when query configuration, account IDs, or usable result values are missing.
+3. Every valid query/account pair is included in one GraphQL POST as an aliased `account(id: ...) { nrql(query: $variable) { results } }` selection. The account ID remains paired with that query.
+4. GraphQL `results` are mapped back to the widget row using the response alias. Values are extracted from actual results; API errors do not become numeric zeroes.
+5. The Excel writer renders each query/account row in the `Dashboard Summary` sheet.
 
-Every non-markdown dashboard widget is represented in the worksheet, including widgets with missing query configuration. Each query/account pair also gets a row when the API request fails or returns no usable values. These cases leave the Value cell blank, preserve the widget/category/type fields, and emit a warning where appropriate; they do not remove the row or substitute zero.
+The committed `dashboard.json` must be the intended New Relic dashboard export. The API key must have access to every account referenced by its query definitions.
 
 ## Workbook layout
 
-The workbook contains one sheet, **Dashboard Summary**:
-
-- Row 1: the dashboard title spans columns A-B; `Monitoring` appears in column C. If a dashboard URL is configured, the title links to it.
-- Row 2 onward: one row per query/account result.
-- Consecutive rows in the same category share one vertically merged category cell.
+The workbook has one sheet, **Dashboard Summary**:
 
 | Column | Contents |
 | --- | --- |
-| A | Category, such as Order Creation, Order Fulfillment, or Integration |
+| A | Category from dashboard markdown headings |
 | B | Widget title |
-| C | Metric type, such as `count`, `latest value`, or `trend` |
-| D | Numeric value from the New Relic query, or blank when no usable value is available |
+| C | Metric type (`count`, `latest value`, or `trend`) |
+| D | Numeric result, or blank when no usable result exists |
 
-The sheet has light-blue title cells, thin black grid borders, centered merged category labels, and right-aligned numeric values. Numeric values are stored as Excel numbers where possible. Query/account identity and result status remain available in the application logs/row model without adding extra visible columns to this compact layout.
+The first row contains the dashboard title and “Monitoring.” Category cells are merged across consecutive widgets in the same category. Account ID, query status, and source timestamp remain part of the internal row model rather than adding columns to the compact workbook.
+
+## Result selection and time window
+
+- A single aggregate response such as `{"count": 0}` is reported as numeric zero.
+- For multiple timestamped result buckets, buckets are scanned newest to oldest and the latest positive numeric value is selected with its timestamp.
+- If every timestamped bucket is zero, the value is blank and status is `No non-zero value`.
+- Missing or failed query results stay blank; query failures are warned about, and the run fails after saving the workbook so Actions does not report a false success.
+- A query's explicit NRQL time range is retained. When it has no `SINCE`, `UNTIL`, or `COMPARE` clause, `SINCE 24 hours ago` is added.
 
 ## Preview
 
-The generated workbook will look approximately like this in Excel. The values below are examples only; real report values come from the NRQL API responses. The sample is shortened to show the layout.
+The sample values below illustrate the layout only; report values come from the API response.
 
 | Japan - Monitoring charts |  | **Monitoring** |  |
 | --- | --- | --- | ---: |
 | Order Creation | Normal Order Creation | count | 312 |
-|  | Pending / Processing status | latest value | 0 |
+|  | Pending / Processing status | latest value | 9 |
 |  | Awaiting shipment | latest value | 9 |
-|  | Awaiting Capture / Payment review | latest value | 0 |
+|  | Awaiting Capture / Payment review | latest value | 1 |
 |  | Pending Payment Cancellations | count | 0 |
-|  | Shipment instruction Cron monitor | trend | 15 |
-|  | Shipment instruction Cron Error monitor | count | 0 |
-| Order Fulfillment | Shipment result processing monitor | trend | 0 |
-|  | Shipment result processing error monitor | count | 0 |
-| Integration | Customer creation sync to CRM - Trend | trend | 271 |
-|  | Customer Sync to Magento - Error | count | 0 |
-| Transactional Email and Inventory | Order confirmation email | trend | 299 |
-|  | Shipment confirmation email | trend | 0 |
-| Age Verification/Account Confirmation | Age unverified customer order count | latest value | 0 |
 
-In Excel, each repeated category is vertically merged and centered over its widget rows; the markdown preview repeats the category in the first cell only to represent that merged area.
-
-## Value selection
-
-For NRQL responses containing multiple timestamped buckets (including `TIMESERIES` queries), the application scans result buckets from last to first and selects the latest bucket whose `count` or other numeric metric is greater than zero. For example, if the results contain counts `0, 0, 1, 0`, the report writes `1`, not the trailing zero. The value is taken directly from that result item and its bucket timestamp is retained. This selection also applies to `count` widgets when their NRQL result is a timestamped series.
-
-- If a later bucket is zero, the search continues to an earlier bucket with a positive value.
-- If all timestamped buckets are zero, `Value` is blank and `Status` is `No non-zero value`.
-- A single aggregate result is read directly, so a legitimate `count: 0` remains zero.
-- If no numeric result is available, `Value` is blank and `Status` is `No numeric result`.
-
-Metric type is first matched against configured metric rules in `app/config.py`. For unmatched widgets, a `TIMESERIES` query or `viz.line` visualization is classified as `trend`; other unmatched widgets default to `count`.
-
-## Time range
-
-The query retains any time range already present in its NRQL. If it has no `SINCE`, `UNTIL`, or `COMPARE` clause, the application adds `SINCE <NEW_RELIC_REPORTING_WINDOW>`. The default is `24 hours ago`.
-
-## Output location and run
-
-The output defaults to:
-
-```text
-output/proactive_report.xlsx
-```
-
-Override the location with `OUTPUT_PATH`. Run the report from the repository root with:
-
-```bash
-python -m app.newrelic_client
-```
-
-In GitHub Actions, the generated workbook is uploaded as the `proactive-report` artifact.
+The category shown in column A is merged in Excel when adjacent rows share it.

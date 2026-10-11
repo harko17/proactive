@@ -1,91 +1,33 @@
 # Proactive
 
-A small Python automation that reads a New Relic dashboard export, queries its NRQL widgets, and saves the results to an Excel spreadsheet.
+Generate an Excel report from a checked-in New Relic dashboard JSON export and live NRQL results from New Relic NerdGraph.
 
-It is intended to run on a schedule (for example via cron) and keep a daily or hourly report of the metrics you care about.
+## Data and credentials
 
-## What the app does
+- `dashboard.json` is the source of truth for widget names, NRQL queries, and the account ID attached to each query. Replace it with the export for the dashboard you want to report on.
+- The only New Relic credential required is a New Relic **User API key**. Do not put the key in `dashboard.json` or commit a populated `.env`.
+- The app sends one GraphQL POST to `https://api.newrelic.com/graphql`, using an `API-Key` header and JSON request body. Each dashboard query is sent as a GraphQL alias with its own account ID and NRQL variable.
+- NRQL queries retain their own time range. Queries without one get `SINCE 24 hours ago`.
 
-- Reads the dashboard JSON export or falls back to a browser login flow
-- Extracts widget titles and NRQL queries from the dashboard configuration without hardcoded metric lists
-- Queries New Relic via the NerdGraph GraphQL API with a configured API key and configurable reporting window
-- Selects the latest non-zero result for `latest value` and `trend` metrics, retaining the matching time-series timestamp
-- Writes a formatted `Dashboard Summary` sheet to `output/proactive_report.xlsx`, including category, visualization, account, metric type, value, and result status
-- Supports scheduled execution through GitHub Actions
+### GitHub Actions setup
 
-## Project structure
+Add one repository secret:
 
-```text
-app/
-  __init__.py
-  config.py              Runtime settings and metric rules
-  newrelic_client.py     Browser automation entry point
-  report.py              Excel report generation and value extraction
-cron/
-  example-cron.txt       Example scheduled task
-output/                  Generated Excel reports
-logs/                    Log files from cron runs
-README.md
-requirements.txt
-.env.example
-.gitignore
-```
+1. Open **Settings → Secrets and variables → Actions**.
+2. Select **New repository secret**.
+3. Set **Name** to `NEW_RELIC_API_KEY`.
+4. Set **Secret** to the New Relic User API key value (paste the key only; no quotes or `API-Key:` prefix).
 
-## Setup
+The workflow uses the dashboard JSON committed in the repository. Confirm that `dashboard.json` contains the intended dashboard export and that the API key can query every account ID in it. The workflow runs hourly and can also be started manually. It uploads the workbook as an artifact; it commits a report only when all New Relic queries succeed.
 
-1. Create a virtual environment:
+For a local run, install dependencies and provide `NEW_RELIC_API_KEY` in the process environment or an untracked `.env` file. `.env.example` shows the single required variable.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-2. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-playwright install chromium
-```
-
-3. Copy the environment template and fill in the real values:
-
-```bash
-cp .env.example .env
-```
-
-4. Update `.env` with your New Relic credentials and, for JSON mode, your API key and dashboard export.
-
-The project supports two modes:
-
-- JSON mode: set `NEW_RELIC_DASHBOARD_JSON` and `NEW_RELIC_API_KEY`
-- Browser mode: set `NEW_RELIC_DASHBOARD_URL`, `NEW_RELIC_USERNAME`, and `NEW_RELIC_PASSWORD`
-
-If a dashboard query does not already specify a time window, the app appends `SINCE <NEW_RELIC_REPORTING_WINDOW>` automatically. The default is `24 hours ago`.
-
-For metrics classified as `latest value` or `trend`, the report scans NRQL result buckets from newest to oldest and records the first positive numeric value. If no positive bucket exists, the report shows `No non-zero value` with a blank value rather than misreporting zero. Other metric types retain their normal query-result value.
-
-See [EXCEL_REPORT.md](./EXCEL_REPORT.md) for the workbook layout and value-selection details.
-
-## Run once
-
-```bash
+python -m venv .venv
+python -m pip install -r requirements.txt
 python -m app.newrelic_client
 ```
 
-Alternative direct script execution also works from the project root:
+The workbook is written to `output/proactive_report.xlsx`. Set `OUTPUT_PATH` to override its location.
 
-```bash
-python app/newrelic_client.py
-```
-
-## Example cron job
-
-```cron
-0 * * * * cd /path/to/proactive && source .venv/bin/activate && python -m app.newrelic_client >> logs/proactive.log 2>&1
-```
-
-## Notes
-
-- The dashboard URL, username, and password are required.
-- If New Relic's DOM changes, update the regex metric rules in `app/config.py`.
-- Do not commit `.env`; keep credentials in a secrets manager or local environment configuration.
+For timestamped NRQL results, the report scans from newest to oldest and selects the latest non-zero bucket. If all buckets are zero, the value stays blank; a single aggregate result of `count: 0` remains zero. See [EXCEL_REPORT.md](./EXCEL_REPORT.md) for the workbook layout and result-selection rules.

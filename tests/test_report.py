@@ -1,74 +1,48 @@
 import json
 import os
-import re
 
 import pytest
 from openpyxl import load_workbook
 
 from app.config import get_metrics, get_runtime_settings
 from app.newrelic_client import NewRelicDashboardClient
-from app.report import ExcelReportWriter, build_rows
+from app.report import ExcelReportWriter
 
 
-def test_build_rows_extracts_and_normalizes_values():
-    page_text = """
-    Normal Order Creation 12,450
-    Pending / Processing status 3.5
-    """
-    metric_rules = [
-        {
-            "category": "Order Creation",
-            "name": "Normal Order Creation",
-            "metric_type": "count",
-            "regex": r"Normal Order Creation\s*([0-9,]+(?:\.\d+)?)",
-            "unit": "orders",
-        },
-        {
-            "category": "Order Creation",
-            "name": "Pending / Processing status",
-            "metric_type": "latest value",
-            "regex": r"Pending / Processing status\s*([0-9,]+(?:\.\d+)?)",
-            "unit": "orders",
-        },
-    ]
+def mock_batch_queries(monkeypatch, query_handler):
+    def fake_batch(self, entries):
+        response = {}
+        for entry in entries:
+            try:
+                response[entry["alias"]] = {
+                    "results": query_handler(entry["account_id"], entry["query"])
+                }
+            except Exception as exc:
+                response[entry["alias"]] = {"error": str(exc)}
+        return response
 
-    rows = build_rows(page_text, metric_rules)
-
-    assert rows[0]["value"] == "12450"
-    assert rows[1]["value"] == "3.5"
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql_batch", fake_batch)
 
 
-def test_default_metrics_match_real_dashboard_label_variants():
-    page_text = """
-    Customer creation sync to CRM - Trend 12
-    Shipment result processing error monitor 4
-    Shipment instruction Cron Error monitor 7
-    """
-
-    rules = {
-        "Customer creation sync to CRM": "Customer creation sync to CRM",
-        "Shipment result processing error": "Shipment result processing error",
-        "Shipment instruction Cron Error": "Shipment instruction Cron Error",
-    }
-
-    for rule_name, expected_text in rules.items():
-        matching_rule = next(rule for rule in get_metrics() if rule.name == rule_name)
-        assert re.search(matching_rule.regex, page_text, re.IGNORECASE)
+def test_metric_rules_only_classify_widget_types():
+    rules = {rule.name: rule.metric_type for rule in get_metrics()}
+    assert rules["Customer creation sync to CRM"] == "trend"
+    assert rules["Shipment result processing error"] == "count"
+    assert rules["Shipment instruction Cron Error"] == "count"
+    assert rules["Customer creation yet to sync Sitecore/CRM"] == "latest value"
+    assert rules["Shipment confirmation email"] == "trend"
 
 
-def test_zero_values_are_not_dropped_from_report():
-    page_text = """
-    Pending / Processing status 0
-    """
-    rows = build_rows(page_text, [{
-        "category": "Order Creation",
-        "name": "Pending / Processing status",
-        "metric_type": "latest value",
-        "regex": r"Pending / Processing status\s*([0-9,]+(?:\.\d+)?)",
-        "unit": "orders",
-    }])
-
-    assert rows[0]["value"] == "0"
+def test_japan_dashboard_widget_types_match_report_specification():
+    assert NewRelicDashboardClient._metric_type(
+        "Order create event - Trend", "FROM Log SELECT count(*)", "viz.billboard"
+    ) == "trend"
+    assert NewRelicDashboardClient._metric_type(
+        "Age unverified customer order count", "FROM Log SELECT count(*)", "viz.billboard"
+    ) == "latest value"
+    assert NewRelicDashboardClient._metric_type(
+        "Sagawa Express API Error", "FROM Log SELECT count(*)", "viz.billboard"
+    ) == "count"
 
 
 def test_extract_from_dashboard_json_uses_nrql_results(monkeypatch):
@@ -91,10 +65,10 @@ def test_extract_from_dashboard_json_uses_nrql_results(monkeypatch):
     client = object.__new__(NewRelicDashboardClient)
     client.settings = {"dashboard_json": json.dumps(dashboard), "account_id": "123"}
 
-    def fake_query(self, account_id, query):
+    def fake_query(account_id, query):
         return [{"count": 42}]
 
-    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    mock_batch_queries(monkeypatch, fake_query)
 
     rows = client.extract_from_dashboard_json()
 
@@ -146,6 +120,16 @@ def test_count_extraction_preserves_single_aggregate_zero():
     assert status == "OK"
 
 
+def test_single_timestamped_zero_bucket_remains_blank():
+    result = [{"beginTimeSeconds": 1_791_686_399, "endTimeSeconds": 1_791_688_199, "count": 0}]
+
+    assert NewRelicDashboardClient._extract_report_value(result) == (
+        None,
+        None,
+        "No non-zero value",
+    )
+
+
 def test_timeseries_with_no_nonzero_counts_stays_blank():
     results = [
         {"beginTimeSeconds": 1_791_686_399, "endTimeSeconds": 1_791_688_199, "count": 0},
@@ -155,46 +139,143 @@ def test_timeseries_with_no_nonzero_counts_stays_blank():
     assert NewRelicDashboardClient._extract_report_value(results) == (None, None, "No non-zero value")
 
 
-def test_graphql_result_extractor_supports_actor_alias_response_shape():
+def test_graphql_batch_result_extractor_maps_actor_alias_responses():
     response = {
         "data": {
             "actor": {
-                "normalOrderCreation": {"nrql": {"results": [{"count": 312}]}},
+                "metric_0": {"nrql": {"results": [{"count": 312}]}},
             }
         }
     }
+    entries = [{"alias": "metric_0"}]
 
-    assert NewRelicDashboardClient._extract_graphql_results(response, "4198216") == [{"count": 312}]
+    assert NewRelicDashboardClient._extract_graphql_batch_results(response, entries) == {
+        "metric_0": {"results": [{"count": 312}]}
+    }
 
 
-def test_graphql_result_extractor_supports_standard_account_response_shape():
+def test_graphql_batch_result_extractor_associates_partial_errors_by_alias():
     response = {
         "data": {
             "actor": {
-                "account": {
-                    "nrql": {
-                        "results": [{"count": 312}],
-                    },
-                },
+                "metric_0": {"nrql": {"results": [{"count": 312}]}},
             },
         },
+        "errors": [{"message": "Account access denied", "path": ["actor", "metric_1", "nrql"]}],
+    }
+    entries = [{"alias": "metric_0"}, {"alias": "metric_1"}]
+
+    assert NewRelicDashboardClient._extract_graphql_batch_results(response, entries) == {
+        "metric_0": {"results": [{"count": 312}]},
+        "metric_1": {"error": "Account access denied"},
     }
 
-    assert NewRelicDashboardClient._extract_graphql_results(response, "4198216") == [{"count": 312}]
+
+def test_graphql_batch_uses_each_entry_account_and_nrql_variable():
+    entries = [
+        {"account_id": "4198216", "query": "FROM Log SELECT count(*)"},
+        {"account_id": "6263774", "query": "FROM Log SELECT count(*) TIMESERIES"},
+    ]
+
+    query, variables = NewRelicDashboardClient._build_graphql_batch(entries, "24 hours ago")
+
+    assert "metric_0: account(id: 4198216)" in query
+    assert "metric_1: account(id: 6263774)" in query
+    assert "$nrql_0: String!" in query and "$nrql_1: String!" in query
+    assert variables == {
+        "nrql_0": "FROM Log SELECT count(*) SINCE 24 hours ago",
+        "nrql_1": "FROM Log SELECT count(*) SINCE 24 hours ago TIMESERIES",
+    }
+    assert entries[0]["alias"] == "metric_0"
+    assert entries[1]["alias"] == "metric_1"
 
 
-def test_graphql_result_extractor_rejects_ambiguous_multiple_aliases():
-    response = {
-        "data": {
-            "actor": {
-                "normalOrderCreation": {"nrql": {"results": [{"count": 312}]}},
-                "awaitingShipment": {"nrql": {"results": [{"count": 9}]}},
-            }
+def test_graphql_http_request_uses_postman_headers_and_variable_payload(monkeypatch):
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {
+        "api_key": "test-api-key",
+        "graphql_endpoint": "https://api.newrelic.com/graphql",
+        "reporting_window": "24 hours ago",
+    }
+    entries = [{
+        "account_id": "4198216",
+        "query": "FROM Log SELECT count(*)",
+        "alias": "metric_0",
+    }]
+    captured = {}
+
+    class MockResponse:
+        status_code = 200
+        headers = {}
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"data": {"actor": {"metric_0": {"nrql": {"results": [{"count": 5}]}}}}}
+
+    def fake_post(url, headers, json, timeout):
+        captured.update(url=url, headers=headers, json=json, timeout=timeout)
+        return MockResponse()
+
+    monkeypatch.setattr("app.newrelic_client.requests.post", fake_post)
+    result = client._query_nrql_batch(entries)
+
+    assert captured["url"] == "https://api.newrelic.com/graphql"
+    assert captured["headers"] == {
+        "API-Key": "test-api-key",
+        "Content-Type": "application/json",
+    }
+    assert captured["json"]["variables"] == {
+        "nrql_0": "FROM Log SELECT count(*) SINCE 24 hours ago"
+    }
+    assert "metric_0: account(id: 4198216)" in captured["json"]["query"]
+    assert result == {"metric_0": {"results": [{"count": 5}]}}
+
+
+def test_dashboard_batch_maps_each_result_to_its_query_account(monkeypatch):
+    dashboard = {
+        "pages": [{
+            "name": "Monitoring",
+            "widgets": [
+                {
+                    "title": "Account A",
+                    "rawConfiguration": {"nrqlQueries": [{
+                        "accountId": "4198216",
+                        "query": "FROM Log SELECT count(*)",
+                    }]},
+                },
+                {
+                    "title": "Account B",
+                    "rawConfiguration": {"nrqlQueries": [{
+                        "accountId": "6263774",
+                        "query": "FROM Log SELECT uniqueCount(message)",
+                    }]},
+                },
+            ],
+        }],
+    }
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {"dashboard_json": json.dumps(dashboard)}
+    sent = []
+
+    def fake_batch(self, entries):
+        sent.extend((entry["account_id"], entry["query"]) for entry in entries)
+        return {
+            entries[0]["alias"]: {"results": [{"count": 11}]},
+            entries[1]["alias"]: {"results": [{"uniqueCount": 22}]},
         }
-    }
 
-    with pytest.raises(RuntimeError, match="contains multiple aliases"):
-        NewRelicDashboardClient._extract_graphql_results(response, "4198216")
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql_batch", fake_batch)
+    rows = client.extract_from_dashboard_json()
+
+    assert sent == [
+        ("4198216", "FROM Log SELECT count(*)"),
+        ("6263774", "FROM Log SELECT uniqueCount(message)"),
+    ]
+    assert [(row["account_id"], row["value"]) for row in rows] == [
+        ("4198216", 11),
+        ("6263774", 22),
+    ]
 
 
 def test_metric_type_inference_preserves_config_and_detects_trends():
@@ -248,13 +329,13 @@ def test_dashboard_report_selects_latest_nonzero_for_latest_value_and_trend(monk
     client = object.__new__(NewRelicDashboardClient)
     client.settings = {"dashboard_json": json.dumps(dashboard)}
 
-    def fake_query(self, account_id, query):
+    def fake_query(account_id, query):
         return [
             {"count": 8, "endTimeSeconds": 1_760_000_000},
             {"count": 0, "endTimeSeconds": 1_760_000_060},
         ]
 
-    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    mock_batch_queries(monkeypatch, fake_query)
     rows = client.extract_from_dashboard_json()
 
     assert [(row["metric_type"], row["value"], row["timestamp"]) for row in rows] == [
@@ -282,7 +363,7 @@ def test_dashboard_count_widget_uses_latest_nonzero_timeseries_count(monkeypatch
     client = object.__new__(NewRelicDashboardClient)
     client.settings = {"dashboard_json": json.dumps(dashboard)}
 
-    def fake_query(self, account_id, query):
+    def fake_query(account_id, query):
         assert account_id == "4198216"
         return [
             {"beginTimeSeconds": 1_791_686_399, "endTimeSeconds": 1_791_688_199, "count": 0},
@@ -291,7 +372,7 @@ def test_dashboard_count_widget_uses_latest_nonzero_timeseries_count(monkeypatch
             {"beginTimeSeconds": 1_791_691_799, "endTimeSeconds": 1_791_693_599, "count": 0},
         ]
 
-    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    mock_batch_queries(monkeypatch, fake_query)
     rows = client.extract_from_dashboard_json()
 
     assert rows[0]["metric_type"] == "trend"
@@ -345,12 +426,12 @@ def test_dashboard_json_keeps_rows_when_query_fails_or_returns_no_value(monkeypa
     client = object.__new__(NewRelicDashboardClient)
     client.settings = {"dashboard_json": json.dumps(dashboard)}
 
-    def fake_query(self, account_id, query):
+    def fake_query(account_id, query):
         if account_id == "101":
             raise RuntimeError("mock API failure")
         return []
 
-    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    mock_batch_queries(monkeypatch, fake_query)
     with pytest.warns(UserWarning):
         rows = client.extract_from_dashboard_json()
 
@@ -391,10 +472,10 @@ def test_extract_from_dashboard_json_accepts_long_json_string(monkeypatch):
     client = object.__new__(NewRelicDashboardClient)
     client.settings = {"dashboard_json": dashboard_json, "account_id": "123"}
 
-    def fake_query(self, account_id, query):
+    def fake_query(account_id, query):
         return [{"count": 7}]
 
-    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    mock_batch_queries(monkeypatch, fake_query)
 
     rows = client.extract_from_dashboard_json()
 
@@ -434,10 +515,10 @@ def test_extract_from_dashboard_json_includes_all_widgets_with_queries(monkeypat
     client = object.__new__(NewRelicDashboardClient)
     client.settings = {"dashboard_json": json.dumps(dashboard), "account_id": "123"}
 
-    def fake_query(self, account_id, query):
+    def fake_query(account_id, query):
         return [{"count": 1}]
 
-    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    mock_batch_queries(monkeypatch, fake_query)
 
     rows = client.extract_from_dashboard_json()
     metric_names = [row["metric_name"] for row in rows]
@@ -495,11 +576,11 @@ def test_extract_from_real_dashboard_json_preserves_query_account_and_category(m
     client.settings = {"dashboard_json": dashboard_path, "account_id": ""}
     calls = []
 
-    def fake_query(self, account_id, query):
+    def fake_query(account_id, query):
         calls.append((account_id, query))
         return [{"count": 2}]
 
-    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    mock_batch_queries(monkeypatch, fake_query)
     rows = client.extract_from_dashboard_json()
 
     assert len(rows) == len(calls) == 20
@@ -513,10 +594,10 @@ def test_real_dashboard_export_keeps_all_rows_when_api_queries_fail(monkeypatch,
     client = object.__new__(NewRelicDashboardClient)
     client.settings = {"dashboard_json": dashboard_path, "account_id": ""}
 
-    def failed_query(self, account_id, query):
+    def failed_query(account_id, query):
         raise RuntimeError("simulated API failure")
 
-    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", failed_query)
+    mock_batch_queries(monkeypatch, failed_query)
     with pytest.warns(UserWarning):
         rows = client.extract_from_dashboard_json()
 
@@ -535,26 +616,39 @@ def test_real_dashboard_export_keeps_all_rows_when_api_queries_fail(monkeypatch,
     assert sheet["D21"].value is None
 
 
-def test_run_raises_clear_error_when_dashboard_json_and_api_key_missing(tmp_path):
+def test_run_fails_loudly_after_saving_report_when_api_queries_fail(monkeypatch, tmp_path):
     client = object.__new__(NewRelicDashboardClient)
     client.settings = {
-        "dashboard_json": "",
-        "api_key": "",
-        "dashboard_url": "https://one.newrelic.com/dashboards/detail/test",
+        "dashboard_json": json.dumps({
+            "pages": [{
+                "name": "Overview",
+                "widgets": [{
+                    "title": "Unavailable",
+                    "rawConfiguration": {"nrqlQueries": [{
+                        "accountId": "101",
+                        "query": "FROM Log SELECT count(*)",
+                    }]},
+                }],
+            }],
+        }),
         "output_path": str(tmp_path / "report.xlsx"),
     }
+    def failed_query(account_id, query):
+        raise RuntimeError("API unavailable")
 
-    with pytest.raises(RuntimeError, match="NEW_RELIC_DASHBOARD_JSON.*NEW_RELIC_API_KEY"):
+    mock_batch_queries(monkeypatch, failed_query)
+
+    with pytest.warns(UserWarning), pytest.raises(RuntimeError, match="could not be queried successfully"):
         client.run()
+    assert (tmp_path / "report.xlsx").exists()
 
 
-def test_get_runtime_settings_requires_required_env(monkeypatch):
-    for key in ["NEW_RELIC_DASHBOARD_URL", "NEW_RELIC_USERNAME", "NEW_RELIC_PASSWORD"]:
-        monkeypatch.delenv(key, raising=False)
-
-    monkeypatch.setenv("NEW_RELIC_DASHBOARD_URL", "")
-    monkeypatch.setenv("NEW_RELIC_USERNAME", "user@example.com")
-    monkeypatch.setenv("NEW_RELIC_PASSWORD", "secret")
-
+def test_get_runtime_settings_requires_only_api_key(monkeypatch):
+    monkeypatch.delenv("NEW_RELIC_API_KEY", raising=False)
     with pytest.raises(ValueError, match="Missing required environment variable"):
         get_runtime_settings()
+
+    monkeypatch.setenv("NEW_RELIC_API_KEY", "test-key")
+    settings = get_runtime_settings()
+    assert settings["api_key"] == "test-key"
+    assert settings["dashboard_json"].endswith("dashboard.json")
