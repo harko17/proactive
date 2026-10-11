@@ -184,6 +184,36 @@ class NewRelicDashboardClient:
         return "count"
 
     @staticmethod
+    def _dashboard_row(
+        dashboard_name: str,
+        dashboard_url: str,
+        page_name: str,
+        category: str,
+        title: str,
+        visualization: str,
+        metric_type: str,
+        account_id: str = "",
+        value=None,
+        timestamp: str | None = None,
+        status: str = "No numeric result",
+    ) -> dict:
+        return {
+            "timestamp": timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "dashboard_name": dashboard_name,
+            "dashboard_url": dashboard_url,
+            "page": page_name,
+            "category": category,
+            "metric_name": title,
+            "metric_type": metric_type,
+            "value": value,
+            "unit": "",
+            "source": "newrelic api",
+            "account_id": str(account_id),
+            "visualization": visualization,
+            "status": status,
+        }
+
+    @staticmethod
     def _normalize_widget_title(title: str) -> str:
         if not title:
             return ""
@@ -256,7 +286,9 @@ class NewRelicDashboardClient:
                     continue
 
                 title = (widget.get("title") or "").strip() or f"Untitled widget {widget_index + 1}"
-                raw_config = widget.get("rawConfiguration") or {}
+                raw_config = widget.get("rawConfiguration")
+                if not isinstance(raw_config, dict):
+                    raw_config = {}
                 visualization_data = widget.get("visualization")
                 visualization = visualization_data.get("id", "") if isinstance(visualization_data, dict) else ""
                 if visualization == "viz.markdown":
@@ -276,26 +308,76 @@ class NewRelicDashboardClient:
                     continue
 
                 queries = raw_config.get("nrqlQueries") or []
+                if not isinstance(queries, list):
+                    queries = [queries]
                 if not queries:
                     warnings.warn(f"Skipping widget '{title}' on page '{page_name}' because it has no NRQL queries")
+                    rows.append(
+                        self._dashboard_row(
+                            dashboard_name,
+                            self.settings.get("dashboard_url", ""),
+                            page_name,
+                            category,
+                            title,
+                            visualization,
+                            self._metric_type(title, "", visualization),
+                            status="No NRQL query",
+                        )
+                    )
                     continue
 
                 for query_index, query_data in enumerate(queries):
                     if not isinstance(query_data, dict):
                         warnings.warn(
-                            f"Skipping NRQL query #{query_index + 1} for widget '{title}' on page '{page_name}' because it is not a JSON object"
+                            f"NRQL query #{query_index + 1} for widget '{title}' on page '{page_name}' is not a JSON object"
+                        )
+                        rows.append(
+                            self._dashboard_row(
+                                dashboard_name,
+                                self.settings.get("dashboard_url", ""),
+                                page_name,
+                                category,
+                                title,
+                                visualization,
+                                self._metric_type(title, "", visualization),
+                                status="Invalid NRQL configuration",
+                            )
                         )
                         continue
 
                     nrql_query = (query_data.get("query") or "").strip()
                     if not nrql_query:
                         warnings.warn(f"Skipping empty NRQL query #{query_index + 1} for widget '{title}' on page '{page_name}'")
+                        rows.append(
+                            self._dashboard_row(
+                                dashboard_name,
+                                self.settings.get("dashboard_url", ""),
+                                page_name,
+                                category,
+                                title,
+                                visualization,
+                                self._metric_type(title, "", visualization),
+                                status="Empty NRQL query",
+                            )
+                        )
                         continue
 
                     account_ids = self._iter_account_ids(query_data)
                     if not account_ids:
                         warnings.warn(
-                            f"Skipping widget '{title}' on page '{page_name}' because no account ID is associated with the query"
+                            f"No account ID is associated with widget '{title}' on page '{page_name}'"
+                        )
+                        rows.append(
+                            self._dashboard_row(
+                                dashboard_name,
+                                self.settings.get("dashboard_url", ""),
+                                page_name,
+                                category,
+                                title,
+                                visualization,
+                                self._metric_type(title, nrql_query, visualization),
+                                status="No account ID",
+                            )
                         )
                         continue
 
@@ -305,6 +387,19 @@ class NewRelicDashboardClient:
                         except Exception as exc:  # pragma: no cover - exercised via mocked API responses in tests
                             warnings.warn(
                                 f"Failed to query widget '{title}' on page '{page_name}' for account {account_id}: {exc}"
+                            )
+                            rows.append(
+                                self._dashboard_row(
+                                    dashboard_name,
+                                    self.settings.get("dashboard_url", ""),
+                                    page_name,
+                                    category,
+                                    title,
+                                    visualization,
+                                    self._metric_type(title, nrql_query, visualization),
+                                    account_id=str(account_id),
+                                    status="Query failed",
+                                )
                             )
                             continue
 
@@ -318,24 +413,22 @@ class NewRelicDashboardClient:
                             status = "OK" if value is not None else "No numeric result"
 
                         if timestamp is None:
-                            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                            timestamp = None
 
                         rows.append(
-                            {
-                                "timestamp": timestamp,
-                                "dashboard_name": dashboard_name,
-                                "dashboard_url": self.settings.get("dashboard_url", ""),
-                                "page": page_name,
-                                "category": category,
-                                "metric_name": title,
-                                "metric_type": metric_type,
-                                "value": value,
-                                "unit": "",
-                                "source": "newrelic api",
-                                "account_id": str(account_id),
-                                "visualization": visualization,
-                                "status": status,
-                            }
+                            self._dashboard_row(
+                                dashboard_name,
+                                self.settings.get("dashboard_url", ""),
+                                page_name,
+                                category,
+                                title,
+                                visualization,
+                                metric_type,
+                                account_id=str(account_id),
+                                value=value,
+                                timestamp=timestamp,
+                                status=status,
+                            )
                         )
 
         return rows

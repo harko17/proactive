@@ -71,6 +71,7 @@ class ExcelReportWriter:
 
         for column, width in enumerate([54, 73, 18, 14], start=1):
             sheet.column_dimensions[get_column_letter(column)].width = width
+        sheet.freeze_panes = "B2"
         sheet.sheet_view.showGridLines = False
         workbook.save(self.output_path)
         return str(self.output_path)

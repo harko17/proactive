@@ -10,7 +10,7 @@ The application creates `output/proactive_report.xlsx` using the dashboard JSON 
 4. Results are read from the API response. The workbook does not derive live values from dashboard configuration or hardcoded metric values.
 5. A row is prepared for each successfully executed query/account pair and written to the `Dashboard Summary` sheet.
 
-If an API request fails, the application emits a warning and skips that query/account row. If the API returns an empty or non-numeric result, the report records a blank value and a status describing the result; it does not substitute zero.
+Every non-markdown dashboard widget is represented in the worksheet, including widgets with missing query configuration. Each query/account pair also gets a row when the API request fails or returns no usable values. These cases leave the Value cell blank, preserve the widget/category/type fields, and emit a warning where appropriate; they do not remove the row or substitute zero.
 
 ## Workbook layout
 
@@ -25,9 +25,9 @@ The workbook contains one sheet, **Dashboard Summary**:
 | A | Category, such as Order Creation, Order Fulfillment, or Integration |
 | B | Widget title |
 | C | Metric type, such as `count`, `latest value`, or `trend` |
-| D | Numeric value from the New Relic query |
+| D | Numeric value from the New Relic query, or blank when no usable value is available |
 
-The sheet has light-blue title cells, thin black grid borders, centered merged category labels, and right-aligned numeric values. Numeric values are stored as Excel numbers where possible. Query/account identity and result status are kept in the application logs/row model rather than adding extra visible columns to this compact layout.
+The sheet has light-blue title cells, thin black grid borders, centered merged category labels, and right-aligned numeric values. Numeric values are stored as Excel numbers where possible. Query/account identity and result status remain available in the application logs/row model without adding extra visible columns to this compact layout.
 
 ## Preview
 

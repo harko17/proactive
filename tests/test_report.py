@@ -190,6 +190,71 @@ def test_dashboard_report_selects_latest_nonzero_for_latest_value_and_trend(monk
     assert all(row["category"] == "Monitoring / Order Creation" for row in rows)
 
 
+def test_dashboard_json_keeps_rows_when_query_fails_or_returns_no_value(monkeypatch):
+    dashboard = {
+        "name": "Production Dashboard",
+        "pages": [{
+            "name": "Overview",
+            "widgets": [
+                {
+                    "title": "Query failed",
+                    "visualization": {"id": "viz.billboard"},
+                    "rawConfiguration": {"nrqlQueries": [{
+                        "accountId": "101",
+                        "query": "FROM Log SELECT count(*)",
+                    }]},
+                },
+                {
+                    "title": "No matching data",
+                    "visualization": {"id": "viz.billboard"},
+                    "rawConfiguration": {"nrqlQueries": [{
+                        "accountId": "102",
+                        "query": "FROM Log SELECT count(*)",
+                    }]},
+                },
+                {
+                    "title": "Missing account",
+                    "visualization": {"id": "viz.billboard"},
+                    "rawConfiguration": {"nrqlQueries": [{
+                        "query": "FROM Log SELECT count(*)",
+                    }]},
+                },
+                {
+                    "title": "Missing query config",
+                    "visualization": {"id": "viz.billboard"},
+                    "rawConfiguration": {},
+                },
+            ],
+        }],
+    }
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {"dashboard_json": json.dumps(dashboard)}
+
+    def fake_query(self, account_id, query):
+        if account_id == "101":
+            raise RuntimeError("mock API failure")
+        return []
+
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    with pytest.warns(UserWarning):
+        rows = client.extract_from_dashboard_json()
+
+    assert [row["metric_name"] for row in rows] == [
+        "Query failed",
+        "No matching data",
+        "Missing account",
+        "Missing query config",
+    ]
+    assert [row["value"] for row in rows] == [None, None, None, None]
+    assert [row["status"] for row in rows] == [
+        "Query failed",
+        "No numeric result",
+        "No account ID",
+        "No NRQL query",
+    ]
+    assert all(row["dashboard_name"] == "Production Dashboard" for row in rows)
+
+
 def test_extract_from_dashboard_json_accepts_long_json_string(monkeypatch):
     dashboard = {
         "name": "New Proactive Business Monitoring - ZA count",
@@ -326,6 +391,33 @@ def test_extract_from_real_dashboard_json_preserves_query_account_and_category(m
     assert all(account_id == "6538703" for account_id, _ in calls)
     assert all(row["account_id"] == "6538703" for row in rows)
     assert rows[0]["category"] == "Order Creation"
+
+
+def test_real_dashboard_export_keeps_all_rows_when_api_queries_fail(monkeypatch, tmp_path):
+    dashboard_path = os.path.join(os.path.dirname(__file__), "..", "dashboard.json")
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {"dashboard_json": dashboard_path, "account_id": ""}
+
+    def failed_query(self, account_id, query):
+        raise RuntimeError("simulated API failure")
+
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", failed_query)
+    with pytest.warns(UserWarning):
+        rows = client.extract_from_dashboard_json()
+
+    assert len(rows) == 20
+    assert all(row["value"] is None for row in rows)
+    assert all(row["status"] == "Query failed" for row in rows)
+
+    output = tmp_path / "report.xlsx"
+    ExcelReportWriter(str(output)).write(rows)
+    sheet = load_workbook(output, data_only=True)["Dashboard Summary"]
+    assert sheet.max_row == 21
+    assert sheet["A1"].value.startswith("New Proactive Business Monitoring")
+    assert sheet["B2"].value == "Normal Order Creation"
+    assert sheet["D2"].value is None
+    assert sheet["B21"].value
+    assert sheet["D21"].value is None
 
 
 def test_run_raises_clear_error_when_dashboard_json_and_api_key_missing(tmp_path):
