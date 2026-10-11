@@ -26,3 +26,41 @@ Describe the required workbook appearance for this market. Replace the prompts b
 ## Example layout
 
 Paste a small Markdown table or attach a screenshot that shows the expected report layout.
+
++----------------------------------------+----------------------------------------------+--------------+-------+
+| GLO IT - Monitoring charts             |                                              | Monitoring   |       |
++----------------------------------------+----------------------------------------------+--------------+-------+
+| Order Creation                         | Normal Order Creation                        | trend        |     2 |
++----------------------------------------+----------------------------------------------+--------------+-------+
+| Order Fulfillment                      | Pending / Processing status                  | latest value |    90 |
+|                                        | Pending Payment                              | latest value |     2 |
+|                                        | Order fulfillment - Shipment Import Error    | count        |     0 |
+|                                        | Order fulfillment - HOG Order Export         | latest value |     1 |
+|                                        | Order fulfillment - Shipment Import          | latest value |     0 |
+|                                        | Order creation to CRM - Trend                | trend        |     1 |
+|                                        | Order fulfillment - Order Export             | latest value |     1 |
+|                                        | Order create/ update event error             | count        |   146 |
++----------------------------------------+----------------------------------------------+--------------+-------+
+| Integration                            | Customer creation sync to CRM - trend        | trend        |     1 |
+|                                        | SharpEnd Customer creation Error             | count        |     0 |
+|                                        | Customer Loyalty CRM update - Error          | count        |       |
+|                                        | Customer without SF ID                       | latest value |    30 |
+|                                        | Customer creation sync to CRM - Error        | count        |    44 |
+|                                        | Customer update to CRM error                 | count        |     0 |
+|                                        | Device Registration error                    | count        | 8.59k |
+|                                        | Customer Sync to Magento - Error             | count        |   950 |
+|                                        | Fanize api request Error                     | count        |    93 |
+|                                        | SMS api request Error                        | count        |     0 |
++----------------------------------------+----------------------------------------------+--------------+-------+
+| Transactional Email                    | Account confirmation email                   | trend        |     0 |
+|                                        | Order confirmation email                     | trend        |     2 |
+|                                        | Shipment confirmation email                  | trend        |     0 |
+|                                        | Invoice email                                | trend        |     0 |
++----------------------------------------+----------------------------------------------+--------------+-------+
+| Age Verification/Account Confirmation  | Age unverified customer order count          | count        |     0 |
+|                                        | Yoti Age verification invalid response       | count        |     0 |
+|                                        | Yoti Age verification unsuccessful response  | count        |     7 |
+|                                        | Yoti API failure                             | count        |     0 |
+|                                        | Yoti Doc Scan API Error                      | count        |     0 |
+|                                        | Yoti Doc scan Unable to create session       | count        |     0 |
++----------------------------------------+----------------------------------------------+--------------+-------+

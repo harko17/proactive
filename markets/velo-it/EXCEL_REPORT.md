@@ -26,3 +26,27 @@ Describe the required workbook appearance for this market. Replace the prompts b
 ## Example layout
 
 Paste a small Markdown table or attach a screenshot that shows the expected report layout.
+
++----------------------------------------+-------------------------------------+--------------+---+
+| VELO IT - Monitoring charts            |                                     | Monitoring   |   |
++----------------------------------------+-------------------------------------+--------------+---+
+| Order Creation                         | Normal Order Creation               | trend        | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Order Fulfillment                      | Pending / Processing status         | latest value | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Order Fulfillment                      | Pending Payment                     | latest value | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Integration                            | Customer creation sync to CRM       | trend        | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Integration                            | Customer without SF ID              | latest value | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Integration                            | Order creation sync to CRM - Trend  | trend        | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Transactional Email                    | Account confirmation email          | trend        | 1 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Transactional Email                    | Order confirmation email            | trend        | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Transactional Email                    | Shipment confirmation email         | trend        | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Age Verification/Account Confirmation  | Age unverified customer order count | count        | 0 |
++----------------------------------------+-------------------------------------+--------------+---+

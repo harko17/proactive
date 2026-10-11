@@ -26,3 +26,14 @@ Describe the required workbook appearance for this market. Replace the prompts b
 ## Example layout
 
 Paste a small Markdown table or attach a screenshot that shows the expected report layout.
+
++---------------------+---------------------------------+--------------+-----+
+| Serbia - Monitoring charts                            | Monitoring   |     |
++---------------------+---------------------------------+--------------+-----+
+| Integration         | Customer creation error         | count        |   0 |
+|                     | Customer update error           | count        | 139 |
+|                     | Customer without SF ID          | latest count |   3 |
+|                     | Order creation Event error      | count        |     |
++---------------------+---------------------------------+--------------+-----+
+| Reverse Integration | Customer Sync to Magento - Error | count        |   9 |
++---------------------+---------------------------------+--------------+-----+

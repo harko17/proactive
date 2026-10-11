@@ -26,3 +26,17 @@ Describe the required workbook appearance for this market. Replace the prompts b
 ## Example layout
 
 Paste a small Markdown table or attach a screenshot that shows the expected report layout.
+
++----------------------------------------+-------------------------------------+--------------+---+
+| VUSE IT - Monitoring charts            |                                     | Monitoring   |   |
++----------------------------------------+-------------------------------------+--------------+---+
+| Order Fulfillment                      | Pending / Processing status         | latest value | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Order Fulfillment                      | Pending Payment                     | latest value | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Order Fulfillment                      | Order fulfillment - Order Export    | latest value | 1 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Integration                            | Customer without SF ID              | latest value | 0 |
++----------------------------------------+-------------------------------------+--------------+---+
+| Age Verification/Account Confirmation  | Age unverified customer order count | count        | 0 |
++----------------------------------------+-------------------------------------+--------------+---+

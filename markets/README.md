@@ -1,6 +1,6 @@
 # Market report specifications
 
-Each market has its own request, captured response, and Excel layout specification. Fill in the three files in that market's folder; use the exact request/response pair and describe its report layout. Keep API keys out of all files.
+Each market has a separate cURL request, response capture, and Excel layout specification. The endpoint, API-Key header, content type, and PowerShell cURL wrapper are shared; only the GraphQL JSON request body differs by market. Paste the complete market-specific body into that market's `CURLS.md`. Keep API keys out of all files.
 
 | Market | cURL request | Response | Excel format |
 | --- | --- | --- | --- |

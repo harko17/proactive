@@ -26,3 +26,33 @@ Describe the required workbook appearance for this market. Replace the prompts b
 ## Example layout
 
 Paste a small Markdown table or attach a screenshot that shows the expected report layout.
+
+╔═══════════════════════════════╦══════════════════════════════════════════════════╦══════════════╦═══════╗
+║ VUSE - DE - Monitoring charts ║                                                  ║ Monitoring   ║       ║
+╠═══════════════════════════════╬══════════════════════════════════════════════════╬══════════════╬═══════╣
+║ Order Fulfillment             ║ Pending / Processing status                      ║ latest value ║     3 ║
+║                               ║ Awaiting shipment                                ║ latest value ║     1 ║
+║                               ║ Awaiting Capture / Payment review                ║ latest value ║     0 ║
+║                               ║ Device-trial Payment pending charge              ║ latest value ║     0 ║
+║                               ║ Pending Payment Cancellations                    ║ count        ║ 7.29k ║
+║                               ║ Order fullfilment Request - Failures             ║ count        ║     0 ║
+║                               ║ Order fullfilment Request - Failures to resolve  ║ count        ║     0 ║
+║                               ║ host                                             ║              ║       ║
+║                               ║ Order fullfilment Request - Failures to read     ║ count        ║     0 ║
+║                               ║ response                                         ║              ║       ║
+║                               ║ Order fullfilment Request - Upload to courier    ║ latest value ║     1 ║
+║                               ║ failed                                           ║              ║       ║
+║                               ║ Shipment creation error                          ║ count        ║     0 ║
+╠═══════════════════════════════╬══════════════════════════════════════════════════╬══════════════╬═══════╣
+║ Integration                   ║ Customer Sync to Magento - Error                 ║ count        ║     0 ║
+║                               ║ Customer without SF ID                           ║ latest value ║     2 ║
+║                               ║ Inventory Sync - Error                           ║ count        ║     0 ║
+╠═══════════════════════════════╬══════════════════════════════════════════════════╬══════════════╬═══════╣
+║ Age Verification/Account      ║ Age unverified customer order count              ║ latest value ║     0 ║
+║ Confirmation                  ║ Age verification (Shufa) - DE Age Verification   ║ count        ║     0 ║
+║                               ║ failure                                          ║              ║       ║
+║                               ║ Account confirmation pending monitor             ║ latest value ║     0 ║
+╠═══════════════════════════════╬══════════════════════════════════════════════════╬══════════════╬═══════╣
+║ Third party Integration       ║ Data flow to SAP - Error                         ║ count        ║     0 ║
+║                               ║ Inspiration club API Error                       ║ count        ║   346 ║
+╚═══════════════════════════════╩════════════════════════════════

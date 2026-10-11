@@ -26,3 +26,21 @@ Describe the required workbook appearance for this market. Replace the prompts b
 ## Example layout
 
 Paste a small Markdown table or attach a screenshot that shows the expected report layout.
+
+╔═══════════════════════════════╦══════════════════════════════════════════════╦══════════════╦═════╗
+║ GLO -PL - Monitoring charts   ║                                              ║ Monitoring   ║     ║
+╠═══════════════════════════════╬══════════════════════════════════════════════╬══════════════╬═════╣
+║ Order Fulfillment             ║ Pending / Processing status                  ║ latest value ║   3 ║
+║                               ║ Awaiting shipment                            ║ latest value ║   3 ║
+║                               ║ Awaiting capture / payment review            ║ latest value ║  14 ║
+║                               ║ Order fullfilment Request - Upload to courier║ latest value ║   1 ║
+║                               ║ failed                                       ║              ║     ║
+║                               ║ Shipment creation error                      ║ count        ║   0 ║
+╠═══════════════════════════════╬══════════════════════════════════════════════╬══════════════╬═════╣
+║ Integration                   ║ Customer Sync to Magento - Error             ║ count        ║ 352 ║
+║                               ║ Inventory Sync - Error                       ║ count        ║   0 ║
+╠═══════════════════════════════╬══════════════════════════════════════════════╬══════════════╬═════╣
+║ Age Verification/Account      ║ Age unverified customer order count          ║ count        ║   0 ║
+║ Confirmation                  ║ Account confirmation pending monitor         ║ latest value ║   0 ║
+║                               ║ Customer without SF ID                       ║ latest value ║   2 ║
+╚═══════════════════════════════╩══════════════════════════════════════════════╩══════════════╩═════╝

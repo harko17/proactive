@@ -26,3 +26,22 @@ Describe the required workbook appearance for this market. Replace the prompts b
 ## Example layout
 
 Paste a small Markdown table or attach a screenshot that shows the expected report layout.
+
+
+╔══════════════════════════════════╦═════════════════════════════════════╦════════════╦═══╗
+║                                  ║ VELO - PL - Monitoring charts       ║ Monitoring ║   ║
+╠══════════════════════════════════╬═════════════════════════════════════╬════════════╬═══╣
+║ Order Creation                   ║ Normal Order Creation               ║ trend      ║ 1 ║
+╠══════════════════════════════════╬═════════════════════════════════════╬════════════╬═══╣
+║ Order Fulfillment                ║ Order fullfilment Request - Trend   ║ trend      ║ 1 ║
+║                                  ║ Shipment creation                   ║ trend      ║ 1 ║
+╠══════════════════════════════════╬═════════════════════════════════════╬════════════╬═══╣
+║ Integration                      ║ Customer creation sync to CRM - Trend║ trend     ║ 1 ║
+║                                  ║ Order creation sync to CRM - Trend  ║ trend      ║ 1 ║
+╠══════════════════════════════════╬═════════════════════════════════════╬════════════╬═══╣
+║ Transactional Email and Inventory║ Account confirmation email          ║ trend      ║ 2 ║
+║                                  ║ Order confirmation email            ║ trend      ║ 1 ║
+║                                  ║ Shipment confirmation email         ║ trend      ║ 0 ║
+╠══════════════════════════════════╬═════════════════════════════════════╬════════════╬═══╣
+║ Third party Integration          ║ Inspiration club API Join Request   ║ trend      ║ 3 ║
+╚══════════════════════════════════╩═════════════════════════════════════╩════════════╩═══╝

@@ -26,3 +26,22 @@ Describe the required workbook appearance for this market. Replace the prompts b
 ## Example layout
 
 Paste a small Markdown table or attach a screenshot that shows the expected report layout.
+
+╔═══════════════════════════════╦══════════════════════════════════════════════╦══════════════╦════╗
+║ GLO -DE - Monitoring charts   ║                                              ║ Monitoring   ║    ║
+╠═══════════════════════════════╬══════════════════════════════════════════════╬══════════════╬════╣
+║ Order Fulfillment             ║ Pending / Processing status                  ║ latest value ║  2 ║
+║                               ║ Awaiting shipment                            ║ latest value ║  2 ║
+║                               ║ Awaiting Capture / Payment review            ║ latest value ║  0 ║
+║                               ║ Device-trial Payment pending charge          ║ latest value ║ 52 ║
+║                               ║ Order fullfilment Request - Upload to courier║ latest value ║  0 ║
+║                               ║ failed                                       ║              ║    ║
+╠═══════════════════════════════╬══════════════════════════════════════════════╬══════════════╬════╣
+║ Integration                   ║ Customer without SF ID                       ║ latest value ║  0 ║
+║                               ║ consent_retry_cron Execution Monitoring      ║ latest value ║  7 ║
+╠═══════════════════════════════╬══════════════════════════════════════════════╬══════════════╬════╣
+║ Transactional Email           ║ Duplicate order confirmation email sent      ║ latest value ║  0 ║
+╠═══════════════════════════════╬══════════════════════════════════════════════╬══════════════╬════╣
+║ Age Verification/Account      ║ Age unverified customer order count          ║ latest value ║  0 ║
+║ Confirmation                  ║ Account confirmation pending monitor         ║ latest value ║  0 ║
+╚═══════════════════════════════╩══════════════════════════════════════════════╩══════════════╩════╝

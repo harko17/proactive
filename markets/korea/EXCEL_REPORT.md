@@ -26,3 +26,15 @@ Describe the required workbook appearance for this market. Replace the prompts b
 ## Example layout
 
 Paste a small Markdown table or attach a screenshot that shows the expected report layout.
+
+╔══════════════════╦═════════════════════════════════════════╦════════════╦════╗
+║                  ║ Korea - Monitoring charts                   ║ Monitoring ║    ║
+╠══════════════════╬═════════════════════════════════════════════╬════════════╬════╣
+║ Order Creation   ║ Normal Order Creation                       ║ trend      ║ 30 ║
+╠══════════════════╬═════════════════════════════════════════════╬════════════╬════╣
+║ Order Fulfillment║ Shipment result processing monitor          ║ trend      ║  0 ║
+╠══════════════════╬═════════════════════════════════════════════╬════════════╬════╣
+║ Integration      ║ Customer create                             ║ trend      ║  0 ║
+║                  ║ Order create/ update - Trend                ║ trend      ║ 46 ║
+║                  ║ Back in Stock Notification - Trend          ║ trend      ║  0 ║
+╚══════════════════╩═════════════════════════════════════════════╩════════════╩════╝
