@@ -105,9 +105,45 @@ class NewRelicDashboardClient:
             if errors:
                 raise RuntimeError(f"New Relic API query failed for account {account_id}: {errors}")
 
-            return data.get("data", {}).get("actor", {}).get("account", {}).get("nrql", {}).get("results", [])
+            return self._extract_graphql_results(data, account_id)
 
         raise RuntimeError(f"New Relic GraphQL request did not complete for account {account_id}")
+
+    @staticmethod
+    def _extract_graphql_results(response_data: dict, account_id: str):
+        actor = response_data.get("data", {}).get("actor")
+        if not isinstance(actor, dict):
+            raise RuntimeError(f"New Relic GraphQL response for account {account_id} did not contain data.actor")
+
+        account = actor.get("account")
+        if isinstance(account, dict):
+            nrql = account.get("nrql")
+            if isinstance(nrql, dict) and isinstance(nrql.get("results"), list):
+                return nrql["results"]
+
+        # A single aliased query is nested directly under actor, rather than actor.account.
+        aliased_results = []
+        for actor_result in actor.values():
+            if not isinstance(actor_result, dict):
+                continue
+            nrql = actor_result.get("nrql")
+            if isinstance(nrql, dict) and isinstance(nrql.get("results"), list):
+                aliased_results.append(nrql["results"])
+            nested_account = actor_result.get("account")
+            if isinstance(nested_account, dict):
+                nrql = nested_account.get("nrql")
+                if isinstance(nrql, dict) and isinstance(nrql.get("results"), list):
+                    aliased_results.append(nrql["results"])
+
+        if len(aliased_results) == 1:
+            return aliased_results[0]
+        if len(aliased_results) > 1:
+            raise RuntimeError(
+                f"New Relic GraphQL response for account {account_id} contains multiple aliases; "
+                "this query runner expects one NRQL result per request."
+            )
+
+        raise RuntimeError(f"New Relic GraphQL response for account {account_id} did not contain NRQL results")
 
     @staticmethod
     def _extract_value(result):
@@ -168,6 +204,26 @@ class NewRelicDashboardClient:
             return value, timestamp
 
         return None, None
+
+    @staticmethod
+    def _extract_report_value(result):
+        timestamped_buckets = (
+            isinstance(result, list)
+            and len(result) > 1
+            and all(
+                isinstance(item, dict)
+                and any(key in item for key in ("beginTimeSeconds", "endTimeSeconds", "timestamp", "time"))
+                for item in result
+            )
+        )
+        if timestamped_buckets:
+            value, timestamp = NewRelicDashboardClient._extract_latest_nonzero(result)
+            if value is None:
+                return None, None, "No non-zero value"
+            return value, timestamp, "OK"
+
+        value = NewRelicDashboardClient._extract_value(result)
+        return value, None, "OK" if value is not None else "No numeric result"
 
     @staticmethod
     def _metric_type(title: str, query: str, visualization: str) -> str:
@@ -404,13 +460,7 @@ class NewRelicDashboardClient:
                             continue
 
                         metric_type = self._metric_type(title, nrql_query, visualization)
-                        if metric_type.lower() in {"latest value", "trend"}:
-                            value, timestamp = self._extract_latest_nonzero(result)
-                            status = "OK" if value is not None else "No non-zero value"
-                        else:
-                            value = self._extract_value(result)
-                            timestamp = None
-                            status = "OK" if value is not None else "No numeric result"
+                        value, timestamp, status = self._extract_report_value(result)
 
                         if timestamp is None:
                             timestamp = None

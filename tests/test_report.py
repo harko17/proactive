@@ -123,6 +123,80 @@ def test_latest_value_or_trend_with_only_zero_results_is_not_zero():
     assert timestamp is None
 
 
+def test_timeseries_count_extracts_latest_nonzero_bucket_and_timestamp():
+    results = [
+        {"beginTimeSeconds": 1_791_686_399, "endTimeSeconds": 1_791_688_199, "count": 0},
+        {"beginTimeSeconds": 1_791_688_199, "endTimeSeconds": 1_791_689_999, "count": 0},
+        {"beginTimeSeconds": 1_791_689_999, "endTimeSeconds": 1_791_691_799, "count": 1},
+        {"beginTimeSeconds": 1_791_691_799, "endTimeSeconds": 1_791_693_599, "count": 0},
+    ]
+
+    value, timestamp, status = NewRelicDashboardClient._extract_report_value(results)
+
+    assert value == 1
+    assert timestamp == "2026-10-11 04:09:59 UTC"
+    assert status == "OK"
+
+
+def test_count_extraction_preserves_single_aggregate_zero():
+    value, timestamp, status = NewRelicDashboardClient._extract_report_value([{"count": 0}])
+
+    assert value == 0
+    assert timestamp is None
+    assert status == "OK"
+
+
+def test_timeseries_with_no_nonzero_counts_stays_blank():
+    results = [
+        {"beginTimeSeconds": 1_791_686_399, "endTimeSeconds": 1_791_688_199, "count": 0},
+        {"beginTimeSeconds": 1_791_688_199, "endTimeSeconds": 1_791_689_999, "count": 0},
+    ]
+
+    assert NewRelicDashboardClient._extract_report_value(results) == (None, None, "No non-zero value")
+
+
+def test_graphql_result_extractor_supports_actor_alias_response_shape():
+    response = {
+        "data": {
+            "actor": {
+                "normalOrderCreation": {"nrql": {"results": [{"count": 312}]}},
+            }
+        }
+    }
+
+    assert NewRelicDashboardClient._extract_graphql_results(response, "4198216") == [{"count": 312}]
+
+
+def test_graphql_result_extractor_supports_standard_account_response_shape():
+    response = {
+        "data": {
+            "actor": {
+                "account": {
+                    "nrql": {
+                        "results": [{"count": 312}],
+                    },
+                },
+            },
+        },
+    }
+
+    assert NewRelicDashboardClient._extract_graphql_results(response, "4198216") == [{"count": 312}]
+
+
+def test_graphql_result_extractor_rejects_ambiguous_multiple_aliases():
+    response = {
+        "data": {
+            "actor": {
+                "normalOrderCreation": {"nrql": {"results": [{"count": 312}]}},
+                "awaitingShipment": {"nrql": {"results": [{"count": 9}]}},
+            }
+        }
+    }
+
+    with pytest.raises(RuntimeError, match="contains multiple aliases"):
+        NewRelicDashboardClient._extract_graphql_results(response, "4198216")
+
+
 def test_metric_type_inference_preserves_config_and_detects_trends():
     assert NewRelicDashboardClient._metric_type(
         "Pending / Processing status",
@@ -188,6 +262,47 @@ def test_dashboard_report_selects_latest_nonzero_for_latest_value_and_trend(monk
         ("trend", 8, "2025-10-09 08:53:20 UTC"),
     ]
     assert all(row["category"] == "Monitoring / Order Creation" for row in rows)
+
+
+def test_dashboard_count_widget_uses_latest_nonzero_timeseries_count(monkeypatch, tmp_path):
+    dashboard = {
+        "name": "Japan Monitoring",
+        "pages": [{
+            "name": "Monitoring",
+            "widgets": [{
+                "title": "Order confirmation email",
+                "visualization": {"id": "viz.billboard"},
+                "rawConfiguration": {"nrqlQueries": [{
+                    "accountId": "4198216",
+                    "query": "FROM Log SELECT count(*) SINCE 24 HOURS AGO TIMESERIES",
+                }]},
+            }],
+        }],
+    }
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {"dashboard_json": json.dumps(dashboard)}
+
+    def fake_query(self, account_id, query):
+        assert account_id == "4198216"
+        return [
+            {"beginTimeSeconds": 1_791_686_399, "endTimeSeconds": 1_791_688_199, "count": 0},
+            {"beginTimeSeconds": 1_791_688_199, "endTimeSeconds": 1_791_689_999, "count": 0},
+            {"beginTimeSeconds": 1_791_689_999, "endTimeSeconds": 1_791_691_799, "count": 1},
+            {"beginTimeSeconds": 1_791_691_799, "endTimeSeconds": 1_791_693_599, "count": 0},
+        ]
+
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    rows = client.extract_from_dashboard_json()
+
+    assert rows[0]["metric_type"] == "trend"
+    assert rows[0]["value"] == 1
+    assert rows[0]["timestamp"] == "2026-10-11 04:09:59 UTC"
+    assert rows[0]["status"] == "OK"
+
+    report_path = tmp_path / "japan-report.xlsx"
+    ExcelReportWriter(str(report_path)).write(rows)
+    sheet = load_workbook(report_path, data_only=True)["Dashboard Summary"]
+    assert sheet["D2"].value == 1
 
 
 def test_dashboard_json_keeps_rows_when_query_fails_or_returns_no_value(monkeypatch):

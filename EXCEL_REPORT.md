@@ -7,7 +7,7 @@ The application creates `output/proactive_report.xlsx` using the dashboard JSON 
 1. The application reads the dashboard JSON from `NEW_RELIC_DASHBOARD_JSON` (either JSON text or a path to a JSON file).
 2. It visits every page and widget, skipping markdown widgets and widgets without executable NRQL queries.
 3. Each query is sent to New Relic NerdGraph using the account ID associated with that query. A query with multiple account IDs is queried once for each account.
-4. Results are read from the API response. The workbook does not derive live values from dashboard configuration or hardcoded metric values.
+4. Results are read from NerdGraph's `data.actor.account.nrql.results` response field. Numeric fields such as `count` are written as numeric Excel values; the workbook does not derive live values from dashboard configuration or hardcoded metric values.
 5. A row is prepared for each successfully executed query/account pair and written to the `Dashboard Summary` sheet.
 
 Every non-markdown dashboard widget is represented in the worksheet, including widgets with missing query configuration. Each query/account pair also gets a row when the API request fails or returns no usable values. These cases leave the Value cell blank, preserve the widget/category/type fields, and emit a warning where appropriate; they do not remove the row or substitute zero.
@@ -54,11 +54,11 @@ In Excel, each repeated category is vertically merged and centered over its widg
 
 ## Value selection
 
-For metrics classified as **latest value** or **trend**, the application scans the NRQL result array from the last item to the first. It selects the first item whose numeric value is greater than zero. The value is taken from that result item and its timestamp is retained when supplied by New Relic.
+For NRQL responses containing multiple timestamped buckets (including `TIMESERIES` queries), the application scans result buckets from last to first and selects the latest bucket whose `count` or other numeric metric is greater than zero. For example, if the results contain counts `0, 0, 1, 0`, the report writes `1`, not the trailing zero. The value is taken directly from that result item and its bucket timestamp is retained. This selection also applies to `count` widgets when their NRQL result is a timestamped series.
 
 - If a later bucket is zero, the search continues to an earlier bucket with a positive value.
-- If all result buckets are zero, `Value` is blank and `Status` is `No non-zero value`.
-- For other metric types, the application uses the existing general result extraction logic; a legitimate zero remains zero.
+- If all timestamped buckets are zero, `Value` is blank and `Status` is `No non-zero value`.
+- A single aggregate result is read directly, so a legitimate `count: 0` remains zero.
 - If no numeric result is available, `Value` is blank and `Status` is `No numeric result`.
 
 Metric type is first matched against configured metric rules in `app/config.py`. For unmatched widgets, a `TIMESERIES` query or `viz.line` visualization is classified as `trend`; other unmatched widgets default to `count`.
