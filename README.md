@@ -1,6 +1,6 @@
 # Proactive
 
-A small Python automation that logs into New Relic, opens a dashboard, extracts a set of operational metrics from the rendered page, and saves them to an Excel spreadsheet.
+A small Python automation that reads a New Relic dashboard export, queries its NRQL widgets, and saves the results to an Excel spreadsheet.
 
 It is intended to run on a schedule (for example via cron) and keep a daily or hourly report of the metrics you care about.
 
@@ -9,7 +9,8 @@ It is intended to run on a schedule (for example via cron) and keep a daily or h
 - Reads the dashboard JSON export or falls back to a browser login flow
 - Extracts widget titles and NRQL queries from the dashboard configuration without hardcoded metric lists
 - Queries New Relic via the NerdGraph GraphQL API with a configured API key and configurable reporting window
-- Normalizes metric values and writes them to `output/proactive_report.xlsx`
+- Selects the latest non-zero result for `latest value` and `trend` metrics, retaining the matching time-series timestamp
+- Writes a formatted `Dashboard Summary` sheet to `output/proactive_report.xlsx`, including category, visualization, account, metric type, value, and result status
 - Supports scheduled execution through GitHub Actions
 
 ## Project structure
@@ -60,6 +61,8 @@ The project supports two modes:
 - Browser mode: set `NEW_RELIC_DASHBOARD_URL`, `NEW_RELIC_USERNAME`, and `NEW_RELIC_PASSWORD`
 
 If a dashboard query does not already specify a time window, the app appends `SINCE <NEW_RELIC_REPORTING_WINDOW>` automatically. The default is `24 hours ago`.
+
+For metrics classified as `latest value` or `trend`, the report scans NRQL result buckets from newest to oldest and records the first positive numeric value. If no positive bucket exists, the report shows `No non-zero value` with a blank value rather than misreporting zero. Other metric types retain their normal query-result value.
 
 ## Run once
 

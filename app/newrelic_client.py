@@ -4,19 +4,20 @@ import json
 import re
 import time
 import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 from playwright.sync_api import sync_playwright
 
 try:
-    from app.config import get_runtime_settings
+    from app.config import get_metrics, get_runtime_settings
     from app.report import ExcelReportWriter, build_rows
 except ImportError:  # pragma: no cover - allows running the file directly
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from app.config import get_runtime_settings
+    from app.config import get_metrics, get_runtime_settings
     from app.report import ExcelReportWriter, build_rows
 
 
@@ -134,6 +135,55 @@ class NewRelicDashboardClient:
         return None
 
     @staticmethod
+    def _extract_latest_nonzero(result):
+        if not isinstance(result, list):
+            return None, None
+
+        for item in reversed(result):
+            if not isinstance(item, dict):
+                continue
+
+            value = NewRelicDashboardClient._extract_value(item)
+            if isinstance(value, bool):
+                continue
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError):
+                continue
+            if numeric_value <= 0:
+                continue
+
+            timestamp = next(
+                (item.get(key) for key in ("endTimeSeconds", "timestamp", "time", "beginTimeSeconds") if item.get(key) is not None),
+                None,
+            )
+            if timestamp is not None:
+                try:
+                    epoch = float(timestamp)
+                    if abs(epoch) >= 100_000_000_000:
+                        epoch /= 1000
+                    timestamp = datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                except (TypeError, ValueError, OSError, OverflowError):
+                    timestamp = str(timestamp)
+            return value, timestamp
+
+        return None, None
+
+    @staticmethod
+    def _metric_type(title: str, query: str, visualization: str) -> str:
+        normalized_title = NewRelicDashboardClient._normalize_widget_title(title)
+        for rule in get_metrics():
+            normalized_rule = NewRelicDashboardClient._normalize_widget_title(rule.name)
+            if normalized_title == normalized_rule or normalized_title.startswith(f"{normalized_rule} "):
+                return rule.metric_type
+
+        if re.search(r"\bTIMESERIES\b", query, flags=re.IGNORECASE) or visualization == "viz.line":
+            return "trend"
+        if re.search(r"\blatest\s*\(", query, flags=re.IGNORECASE):
+            return "latest value"
+        return "count"
+
+    @staticmethod
     def _normalize_widget_title(title: str) -> str:
         if not title:
             return ""
@@ -190,11 +240,14 @@ class NewRelicDashboardClient:
 
         dashboard = json.loads(self._load_dashboard_json(dashboard_json))
         rows = []
+        dashboard_name = dashboard.get("name") or "New Relic Dashboard"
 
         for page in dashboard.get("pages", []) or []:
             if not isinstance(page, dict):
                 continue
             page_name = (page.get("name") or "New Relic Dashboard").strip() or "New Relic Dashboard"
+            category = page_name
+            category_headings = []
             widgets = page.get("widgets", []) or []
 
             for widget_index, widget in enumerate(widgets):
@@ -204,6 +257,24 @@ class NewRelicDashboardClient:
 
                 title = (widget.get("title") or "").strip() or f"Untitled widget {widget_index + 1}"
                 raw_config = widget.get("rawConfiguration") or {}
+                visualization_data = widget.get("visualization")
+                visualization = visualization_data.get("id", "") if isinstance(visualization_data, dict) else ""
+                if visualization == "viz.markdown":
+                    markdown_text = raw_config.get("text") or ""
+                    headings = re.findall(r"^\s{0,3}(#{1,6})\s+(.+?)\s*$", markdown_text, flags=re.MULTILINE)
+                    for marker, heading in headings:
+                        heading = heading.strip()
+                        level = len(marker)
+                        if "dashboard" in heading.lower():
+                            category_headings = []
+                            continue
+                        category_headings = [
+                            entry for entry in category_headings if entry[0] < level
+                        ]
+                        category_headings.append((level, heading))
+                    category = " / ".join(heading for _, heading in category_headings) or page_name
+                    continue
+
                 queries = raw_config.get("nrqlQueries") or []
                 if not queries:
                     warnings.warn(f"Skipping widget '{title}' on page '{page_name}' because it has no NRQL queries")
@@ -237,24 +308,33 @@ class NewRelicDashboardClient:
                             )
                             continue
 
-                        value = self._extract_value(result)
-                        if value is None:
-                            warnings.warn(
-                                f"Widget '{title}' on page '{page_name}' returned no numeric value for account {account_id}; "
-                                "the query result was ignored instead of being treated as zero."
-                            )
-                            continue
+                        metric_type = self._metric_type(title, nrql_query, visualization)
+                        if metric_type.lower() in {"latest value", "trend"}:
+                            value, timestamp = self._extract_latest_nonzero(result)
+                            status = "OK" if value is not None else "No non-zero value"
+                        else:
+                            value = self._extract_value(result)
+                            timestamp = None
+                            status = "OK" if value is not None else "No numeric result"
+
+                        if timestamp is None:
+                            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
                         rows.append(
                             {
-                                "timestamp": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-                                "category": page_name,
+                                "timestamp": timestamp,
+                                "dashboard_name": dashboard_name,
+                                "dashboard_url": self.settings.get("dashboard_url", ""),
+                                "page": page_name,
+                                "category": category,
                                 "metric_name": title,
-                                "metric_type": "count",
-                                "value": str(value),
+                                "metric_type": metric_type,
+                                "value": value,
                                 "unit": "",
                                 "source": "newrelic api",
                                 "account_id": str(account_id),
+                                "visualization": visualization,
+                                "status": status,
                             }
                         )
 

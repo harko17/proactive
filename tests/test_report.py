@@ -3,6 +3,7 @@ import os
 import re
 
 import pytest
+from openpyxl import load_workbook
 
 from app.config import get_metrics, get_runtime_settings
 from app.newrelic_client import NewRelicDashboardClient
@@ -98,7 +99,95 @@ def test_extract_from_dashboard_json_uses_nrql_results(monkeypatch):
     rows = client.extract_from_dashboard_json()
 
     assert rows[0]["metric_name"] == "Normal Order Creation"
-    assert rows[0]["value"] == "42"
+    assert rows[0]["value"] == 42
+    assert rows[0]["metric_type"] == "count"
+    assert rows[0]["status"] == "OK"
+
+
+def test_latest_value_and_trend_choose_latest_nonzero_result_only():
+    results = [
+        {"count": 3, "endTimeSeconds": 1_760_000_000},
+        {"count": 0, "endTimeSeconds": 1_760_000_060},
+    ]
+
+    value, timestamp = NewRelicDashboardClient._extract_latest_nonzero(results)
+
+    assert value == 3
+    assert timestamp == "2025-10-09 08:53:20 UTC"
+
+
+def test_latest_value_or_trend_with_only_zero_results_is_not_zero():
+    value, timestamp = NewRelicDashboardClient._extract_latest_nonzero([{"count": 0}])
+
+    assert value is None
+    assert timestamp is None
+
+
+def test_metric_type_inference_preserves_config_and_detects_trends():
+    assert NewRelicDashboardClient._metric_type(
+        "Pending / Processing status",
+        "FROM Log SELECT count(*) TIMESERIES",
+        "viz.line",
+    ) == "latest value"
+    assert NewRelicDashboardClient._metric_type(
+        "A new dashboard metric",
+        "FROM Log SELECT count(*) TIMESERIES",
+        "viz.line",
+    ) == "trend"
+    assert NewRelicDashboardClient._metric_type(
+        "A new dashboard metric",
+        "FROM Log SELECT count(*)",
+        "viz.billboard",
+    ) == "count"
+
+
+def test_dashboard_report_selects_latest_nonzero_for_latest_value_and_trend(monkeypatch):
+    dashboard = {
+        "name": "Test Dashboard",
+        "pages": [{
+            "name": "Monitoring",
+            "widgets": [
+                {
+                    "title": "",
+                    "visualization": {"id": "viz.markdown"},
+                    "rawConfiguration": {"text": "# Monitoring\n## Order Creation"},
+                },
+                {
+                    "title": "Pending / Processing status",
+                    "visualization": {"id": "viz.line"},
+                    "rawConfiguration": {"nrqlQueries": [{
+                        "accountId": "123",
+                        "query": "FROM Log SELECT count(*) TIMESERIES",
+                    }]},
+                },
+                {
+                    "title": "Recently added metric",
+                    "visualization": {"id": "viz.line"},
+                    "rawConfiguration": {"nrqlQueries": [{
+                        "accountId": "456",
+                        "query": "FROM Log SELECT count(*) TIMESERIES",
+                    }]},
+                },
+            ],
+        }],
+    }
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {"dashboard_json": json.dumps(dashboard)}
+
+    def fake_query(self, account_id, query):
+        return [
+            {"count": 8, "endTimeSeconds": 1_760_000_000},
+            {"count": 0, "endTimeSeconds": 1_760_000_060},
+        ]
+
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    rows = client.extract_from_dashboard_json()
+
+    assert [(row["metric_type"], row["value"], row["timestamp"]) for row in rows] == [
+        ("latest value", 8, "2025-10-09 08:53:20 UTC"),
+        ("trend", 8, "2025-10-09 08:53:20 UTC"),
+    ]
+    assert all(row["category"] == "Monitoring / Order Creation" for row in rows)
 
 
 def test_extract_from_dashboard_json_accepts_long_json_string(monkeypatch):
@@ -130,7 +219,7 @@ def test_extract_from_dashboard_json_accepts_long_json_string(monkeypatch):
     rows = client.extract_from_dashboard_json()
 
     assert rows[0]["metric_name"] == "Pending Payment Cancellations"
-    assert rows[0]["value"] == "7"
+    assert rows[0]["value"] == 7
 
 
 def test_extract_from_dashboard_json_includes_all_widgets_with_queries(monkeypatch):
@@ -188,10 +277,45 @@ def test_excel_report_writer_creates_parent_directory(tmp_path):
     target = tmp_path / "nested" / "report.xlsx"
 
     writer = ExcelReportWriter(str(target))
-    saved_path = writer.write([{"timestamp": "now", "category": "Test", "metric_name": "Test metric", "metric_type": "count", "value": "42", "unit": "items", "source": "unit test"}])
+    saved_path = writer.write([{
+        "timestamp": "now",
+        "dashboard_url": "https://one.newrelic.com/dashboards",
+        "category": "Test",
+        "metric_name": "Test metric",
+        "metric_type": "count",
+        "value": "42",
+        "unit": "items",
+        "source": "unit test",
+    }])
 
     assert saved_path == str(target)
     assert target.exists()
+    workbook = load_workbook(target, data_only=True)
+    sheet = workbook["Dashboard Summary"]
+    assert sheet["A1"].value == "New Relic Dashboard - Monitoring charts"
+    assert sheet["H5"].value == 42
+    assert sheet["G5"].value == "count"
+    assert sheet["A1"].hyperlink.target == "https://one.newrelic.com/dashboards"
+    assert sheet.freeze_panes == "A5"
+
+
+def test_extract_from_real_dashboard_json_preserves_query_account_and_category(monkeypatch):
+    dashboard_path = os.path.join(os.path.dirname(__file__), "..", "dashboard.json")
+    client = object.__new__(NewRelicDashboardClient)
+    client.settings = {"dashboard_json": dashboard_path, "account_id": ""}
+    calls = []
+
+    def fake_query(self, account_id, query):
+        calls.append((account_id, query))
+        return [{"count": 2}]
+
+    monkeypatch.setattr(NewRelicDashboardClient, "_query_nrql", fake_query)
+    rows = client.extract_from_dashboard_json()
+
+    assert len(rows) == len(calls) == 20
+    assert all(account_id == "6538703" for account_id, _ in calls)
+    assert all(row["account_id"] == "6538703" for row in rows)
+    assert rows[0]["category"] == "Order Creation"
 
 
 def test_run_raises_clear_error_when_dashboard_json_and_api_key_missing(tmp_path):
