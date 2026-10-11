@@ -1,4 +1,4 @@
-name: Generate New Relic Report
+name: Generate New Relic Market Reports
 
 on:
   workflow_dispatch:
@@ -31,7 +31,7 @@ jobs:
       - name: Generate New Relic Report
         env:
           NEW_RELIC_API_KEY: ${{ secrets.NEW_RELIC_API_KEY }}
-          OUTPUT_PATH: output/proactive_report.xlsx
+          OUTPUT_DIR: output
         run: |
           mkdir -p output
           python -m app.newrelic_client
@@ -40,8 +40,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: proactive-report
-          path: output/proactive_report.xlsx
+          name: newrelic-market-reports
+          path: output/*.xlsx
           if-no-files-found: warn
           retention-days: 30
 
@@ -50,10 +50,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add --force output/proactive_report.xlsx
+          git add --force output/*.xlsx
           if git diff --cached --quiet; then
             echo "Report is unchanged; nothing to commit."
           else
-            git commit -m "Update New Relic report - $(date +'%Y-%m-%d %H:%M:%S')"
+            git commit -m "Update New Relic market reports - $(date +'%Y-%m-%d %H:%M:%S')"
             git push
           fi

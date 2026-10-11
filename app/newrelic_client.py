@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import time
 import warnings
 from datetime import datetime, timezone
@@ -10,13 +9,15 @@ from pathlib import Path
 import requests
 
 try:
-    from app.config import get_metrics, get_runtime_settings
+    from app.config import get_runtime_settings
+    from app.market import apply_report_layout, load_request, parse_report_layout
     from app.report import ExcelReportWriter
 except ImportError:  # pragma: no cover - allows running the file directly
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from app.config import get_metrics, get_runtime_settings
+    from app.config import get_runtime_settings
+    from app.market import apply_report_layout, load_request, parse_report_layout
     from app.report import ExcelReportWriter
 
 
@@ -99,7 +100,7 @@ class NewRelicDashboardClient:
                 results[alias] = {"error": "; ".join(alias_errors[alias])}
                 continue
             query_result = actor.get(alias) if isinstance(actor, dict) else None
-            nrql = query_result.get("nrql") if isinstance(query_result, dict) else None
+            nrql = query_result.get("nrql", query_result) if isinstance(query_result, dict) else None
             values = nrql.get("results") if isinstance(nrql, dict) else None
             if isinstance(values, list):
                 results[alias] = {"results": values}
@@ -117,6 +118,7 @@ class NewRelicDashboardClient:
             keys = list(result)
             preferred_keys = (
                 "count",
+                "counts",
                 "uniqueCount",
                 "sum",
                 "average",
@@ -127,12 +129,26 @@ class NewRelicDashboardClient:
                 "result",
                 "value",
             )
-            measurement_key = next((key for key in preferred_keys if key in result), None)
+            case_insensitive_keys = {key.lower(): key for key in keys}
+            measurement_key = next(
+                (case_insensitive_keys[key.lower()] for key in preferred_keys if key.lower() in case_insensitive_keys),
+                None,
+            )
             if measurement_key is None:
                 measurement_key = next(
                     (
                         key for prefix in ("count.", "uniqueCount.", "sum.", "average.", "max.", "min.")
                         for key in keys if key.startswith(prefix)
+                    ),
+                    None,
+                )
+            if measurement_key is None:
+                measurement_key = next(
+                    (
+                        key for key, value in result.items()
+                        if key not in {"beginTimeSeconds", "endTimeSeconds", "timestamp", "time"}
+                        and isinstance(value, (int, float))
+                        and not isinstance(value, bool)
                     ),
                     None,
                 )
@@ -255,60 +271,23 @@ class NewRelicDashboardClient:
             "status": status,
         }
 
-    def _load_curl_request(self) -> tuple[dict, list[dict]]:
-        curl_path = Path(self.settings["curl_file"])
-        curl_document = curl_path.read_text(encoding="utf-8")
-        body_match = re.search(r"\$body\s*=\s*@'\s*\r?\n([\s\S]*?)\r?\n'@", curl_document)
-        if not body_match:
-            raise ValueError(f"Could not find the --data-raw JSON body in {curl_path}")
-        payload = json.loads(body_match.group(1))
-        if not isinstance(payload, dict):
-            raise ValueError(f"The cURL request body in {curl_path} must be a JSON object")
-        graphql_query = payload.get("query")
-        if not isinstance(graphql_query, str):
-            raise ValueError(f"The cURL request in {curl_path} has no GraphQL query")
-
-        selection_pattern = re.compile(
-            r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*account\(id:\s*(\d+)\)\s*"
-            r"\{\s*nrql\(query:\s*(\"(?:\\.|[^\"\\])*\")\)\s*\{\s*results\s*\}\s*\}"
-        )
-        entries = []
-        for alias, account_id, encoded_nrql in selection_pattern.findall(graphql_query):
-            if int(account_id) <= 0:
-                raise ValueError(f"Invalid New Relic account ID {account_id!r} for alias {alias!r}")
-            metric = next((item for item in get_metrics() if item.alias == alias), None)
-            if metric is None:
-                raise ValueError(f"No report label is configured for GraphQL alias {alias!r}")
-            entries.append({
-                "alias": alias,
-                "account_id": account_id,
-                "query": json.loads(encoded_nrql),
-                "dashboard_name": "Japan",
-                "page": "Monitoring",
-                "category": metric.category,
-                "metric_name": metric.name,
-                "visualization": "",
-                "metric_type": metric.metric_type,
-            })
-
-        expected_aliases = {item.alias for item in get_metrics()}
-        actual_aliases = {entry["alias"] for entry in entries}
-        if len(entries) != len(expected_aliases) or actual_aliases != expected_aliases:
-            missing = sorted(expected_aliases - actual_aliases)
-            unexpected = sorted(actual_aliases - expected_aliases)
-            raise ValueError(
-                f"GraphQL widget set in {curl_path} is incomplete or has duplicates "
-                f"(missing={missing}, unexpected={unexpected})"
-            )
-        entries.sort(key=lambda entry: next(
-            index for index, metric in enumerate(get_metrics()) if metric.alias == entry["alias"]
-        ))
-        return payload, entries
-
-    def _rows_from_graphql_response(self, response_data: dict, entries: list[dict]) -> list[dict]:
-        results_by_alias = self._extract_graphql_batch_results(response_data, entries)
+    def _rows_from_graphql_response(
+        self,
+        response_data: dict,
+        entries: list[dict],
+        layout: dict,
+    ) -> list[dict]:
+        query_entries = [entry for entry in entries if entry.get("alias")]
+        results_by_alias = self._extract_graphql_batch_results(response_data, query_entries)
         rows = []
         for entry in entries:
+            if not entry.get("alias"):
+                rows.append(self._dashboard_row(
+                    layout["title"], "", "Monitoring", entry["category"],
+                    entry["metric_name"], "", entry["metric_type"],
+                    status="No query configured",
+                ))
+                continue
             result = results_by_alias[entry["alias"]]
             if "error" in result:
                 warnings.warn(
@@ -316,38 +295,78 @@ class NewRelicDashboardClient:
                     f"and account {entry['account_id']}: {result['error']}"
                 )
                 row = self._dashboard_row(
-                    entry["dashboard_name"], "", entry["page"], entry["category"],
-                    entry["metric_name"], entry["visualization"], entry["metric_type"],
+                    layout["title"], "", "Monitoring", entry["category"],
+                    entry["metric_name"], entry.get("visualization", ""), entry["metric_type"],
                     account_id=entry["account_id"], status="Query failed",
                 )
             else:
                 value, timestamp, status = self._extract_report_value(result["results"])
                 row = self._dashboard_row(
-                    entry["dashboard_name"], "", entry["page"], entry["category"],
-                    entry["metric_name"], entry["visualization"], entry["metric_type"],
+                    layout["title"], "", "Monitoring", entry["category"],
+                    entry["metric_name"], entry.get("visualization", ""), entry["metric_type"],
                     account_id=entry["account_id"], value=value, timestamp=timestamp, status=status,
                 )
             rows.append(row)
         return rows
 
     def run(self):
-        payload, entries = self._load_curl_request()
-        response = self._send_graphql_payload(payload, entries)
-        rows = self._rows_from_graphql_response(response, entries)
-        print(f"Japan dashboard query rows prepared: {len(rows)}")
-        writer = ExcelReportWriter(self.settings["output_path"])
-        report_path = writer.write(rows)
-        failed_rows = [
-            row for row in rows
-            if row.get("status") not in {"OK", "No numeric result"}
-        ]
-        if failed_rows:
-            raise RuntimeError(
-                f"{len(failed_rows)} dashboard row(s) could not be queried successfully. "
-                f"The report with blank unavailable values "
-                f"was saved to {report_path}."
+        markets_root = Path(self.settings["markets_root"])
+        output_dir = Path(self.settings["output_dir"])
+        market_dirs = sorted(
+            path for path in markets_root.iterdir()
+            if path.is_dir() and (path / "CURLS.md").is_file()
+        )
+        if not market_dirs:
+            raise RuntimeError(f"No market request files were found under {markets_root}")
+
+        report_paths = []
+        failures = []
+        for market_dir in market_dirs:
+            curl_path = market_dir / "CURLS.md"
+            spec_path = market_dir / "EXCEL_REPORT.md"
+            output_path = output_dir / f"{market_dir.name}.xlsx"
+            try:
+                payload, query_entries = load_request(curl_path)
+                layout = parse_report_layout(spec_path, market_dir.name)
+                entries = apply_report_layout(query_entries, layout)
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                failures.append(f"{market_dir.name}: could not load market configuration: {exc}")
+                continue
+
+            try:
+                response = self._send_graphql_payload(payload, query_entries)
+            except RuntimeError as exc:
+                failures.append(f"{market_dir.name}: {exc}")
+                response = {"data": {"actor": {}}, "errors": [{"message": str(exc)}]}
+
+            rows = self._rows_from_graphql_response(response, entries, layout)
+            writer = ExcelReportWriter(
+                str(output_path),
+                report_title=layout["title"],
+                title_column=layout["title_column"],
+                merge_categories=layout["merge_categories"],
             )
-        return report_path
+            report_path = writer.write(rows)
+            report_paths.append(report_path)
+            failed_rows = [
+                row for row in rows
+                if row.get("status") not in {"OK", "No numeric result"}
+                and row.get("status") != "No query configured"
+            ]
+            if failed_rows:
+                failures.append(
+                    f"{market_dir.name}: {len(failed_rows)} row(s) failed or have no mapped query "
+                    f"(report saved to {report_path})"
+                )
+            print(f"{market_dir.name}: prepared {len(rows)} rows -> {report_path}")
+
+        if failures:
+            raise RuntimeError("One or more market reports are incomplete:\n- " + "\n- ".join(failures))
+        if len(report_paths) != len(market_dirs):
+            raise RuntimeError(
+                f"Generated {len(report_paths)} reports for {len(market_dirs)} configured markets"
+            )
+        return report_paths
 
 
 if __name__ == "__main__":

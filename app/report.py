@@ -8,19 +8,33 @@ from openpyxl.utils import get_column_letter
 
 
 class ExcelReportWriter:
-    def __init__(self, output_path: str):
+    def __init__(
+        self,
+        output_path: str,
+        report_title: str = "New Relic Dashboard",
+        title_column: int = 1,
+        merge_categories: bool = True,
+    ):
         self.output_path = Path(output_path)
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        self.report_title = report_title
+        self.title_column = title_column
+        self.merge_categories = merge_categories
 
     def write(self, rows: list[dict]) -> str:
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Dashboard Summary"
 
-        dashboard_name = next((row.get("dashboard_name") for row in rows if row.get("dashboard_name")), "New Relic Dashboard")
         dashboard_url = next((row.get("dashboard_url") for row in rows if row.get("dashboard_url")), "")
-        sheet.merge_cells("A1:B1")
-        title_cell = sheet.cell(row=1, column=1, value=f"{dashboard_name} - Monitoring charts")
+        title_column = max(1, min(self.title_column, 2))
+        if title_column == 1:
+            sheet.merge_cells("A1:B1")
+        title_cell = sheet.cell(
+            row=1,
+            column=title_column,
+            value=f"{self.report_title} - Monitoring charts",
+        )
         title_cell.font = Font(name="Aptos", size=12, bold=True, color="477C7D", underline="single")
         title_cell.fill = PatternFill("solid", fgColor="A9CBE8")
         title_cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -52,20 +66,21 @@ class ExcelReportWriter:
                 )
             sheet.row_dimensions[row_index].height = 22
 
-        category_start = 0
-        while category_start < len(rows):
-            category = rows[category_start].get("category", "")
-            category_end = category_start + 1
-            while category_end < len(rows) and rows[category_end].get("category", "") == category:
-                category_end += 1
-            excel_start = category_start + 2
-            excel_end = category_end + 1
-            if category_end - category_start > 1:
-                sheet.merge_cells(start_row=excel_start, start_column=1, end_row=excel_end, end_column=1)
-                category_cell = sheet.cell(row=excel_start, column=1)
-                category_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                category_cell.border = grid_border
-            category_start = category_end
+        if self.merge_categories:
+            category_start = 0
+            while category_start < len(rows):
+                category = rows[category_start].get("category", "")
+                category_end = category_start + 1
+                while category_end < len(rows) and rows[category_end].get("category", "") == category:
+                    category_end += 1
+                excel_start = category_start + 2
+                excel_end = category_end + 1
+                if category and category_end - category_start > 1:
+                    sheet.merge_cells(start_row=excel_start, start_column=1, end_row=excel_end, end_column=1)
+                    category_cell = sheet.cell(row=excel_start, column=1)
+                    category_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    category_cell.border = grid_border
+                category_start = category_end
 
         for column, width in enumerate([54, 73, 18, 14], start=1):
             sheet.column_dimensions[get_column_letter(column)].width = width
