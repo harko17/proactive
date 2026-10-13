@@ -7,6 +7,7 @@ from openpyxl import load_workbook
 from app.config import get_runtime_settings
 from app.market import apply_report_layout, load_request, parse_report_layout, parse_graphql_entries
 from app.newrelic_client import NewRelicDashboardClient
+from app.overall_report import generate_overall_report
 from app.report import ExcelReportWriter
 
 
@@ -307,6 +308,46 @@ def test_report_writer_preserves_repeated_categories_and_title_column(tmp_path):
     assert not sheet.merged_cells.ranges
 
 
+def test_overall_report_fills_market_values_and_marks_missing_metrics(tmp_path):
+    template_path = tmp_path / "overall_report.md"
+    template_path.write_text(
+        "| Areas | ZA | GLO DE | GLO PL | Japan | Korea | B2B KR | VELO PL | VUSE DE | GLO IT | Serbia | VELO IT | VUSE IT | Tetris FR | Tetris GR |\n"
+        "| Abandoned Cart Update Error | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? | #NAME? |\n",
+        encoding="utf-8",
+    )
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    for slug in {
+        "za", "glo-de", "glo-pl", "japan", "korea", "b2b-kr", "velo-pl",
+        "vuse-de", "glo-it", "serbia", "velo-it", "vuse-it", "tetris-fr", "tetris-gr",
+    }:
+        ExcelReportWriter(
+            str(reports_dir / f"{slug}.xlsx"),
+            report_title=slug,
+        ).write([
+            {
+                "category": "Integration",
+                "metric_name": "Abandoned Cart Update Error" if slug == "japan" else "A Different Metric",
+                "metric_type": "count",
+                "value": 7 if slug == "japan" else 99,
+            }
+        ])
+
+    output_path = tmp_path / "output" / "overall_report.md"
+    generate_overall_report(template_path, reports_dir, output_path)
+
+    rows = [
+        [cell.strip() for cell in line.strip().strip("|").split("|")]
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("|")
+    ]
+    assert rows[1] == [
+        "Abandoned Cart Update Error", "-", "-", "-", "7", "-", "-", "-",
+        "-", "-", "-", "-", "-", "-", "-",
+    ]
+    assert "#NAME?" not in output_path.read_text(encoding="utf-8")
+
+
 def test_run_generates_market_workbooks_from_mocked_api_responses(monkeypatch, tmp_path):
     client = make_client(output_dir=str(tmp_path), tetris_api_key="test-tetris-api-key")
     credentials_by_alias = {}
@@ -322,12 +363,19 @@ def test_run_generates_market_workbooks_from_mocked_api_responses(monkeypatch, t
     )
 
     report_paths = client.run()
-    assert len(report_paths) == len(MARKET_DIRS)
-    assert {Path(path).stem for path in report_paths} == {path.name for path in MARKET_DIRS}
+    assert len(report_paths) == len(MARKET_DIRS) + 1
+    assert {Path(path).stem for path in report_paths} == {
+        *(path.name for path in MARKET_DIRS),
+        "overall_report",
+    }
+    assert Path(report_paths[-1]).name == "overall_report.md"
     for path in report_paths:
         assert Path(path).is_file()
-        workbook = load_workbook(path, data_only=True)
-        assert workbook["Dashboard Summary"].max_row > 1
+        if Path(path).suffix == ".xlsx":
+            workbook = load_workbook(path, data_only=True)
+            assert workbook["Dashboard Summary"].max_row > 1
+        else:
+            assert "#NAME?" not in Path(path).read_text(encoding="utf-8")
     assert credentials_by_alias["stuckinpendingstatus"] == (
         "test-tetris-api-key",
         "TETRIS_API_KEY",

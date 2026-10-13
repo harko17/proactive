@@ -11,6 +11,7 @@ import requests
 try:
     from app.config import get_runtime_settings
     from app.market import apply_report_layout, load_request, parse_report_layout
+    from app.overall_report import generate_overall_report
     from app.report import ExcelReportWriter
 except ImportError:  # pragma: no cover - allows running the file directly
     import sys
@@ -18,6 +19,7 @@ except ImportError:  # pragma: no cover - allows running the file directly
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from app.config import get_runtime_settings
     from app.market import apply_report_layout, load_request, parse_report_layout
+    from app.overall_report import generate_overall_report
     from app.report import ExcelReportWriter
 
 
@@ -395,6 +397,13 @@ class NewRelicDashboardClient:
             raise RuntimeError(
                 f"Generated {len(report_paths)} reports for {len(market_dirs)} configured markets"
             )
+        overall_report_path = generate_overall_report(
+            markets_root / "overall_report.md",
+            output_dir,
+            output_dir / "overall_report.md",
+        )
+        report_paths.append(overall_report_path)
+        print(f"Prepared overall report -> {overall_report_path}")
         return report_paths
 
 

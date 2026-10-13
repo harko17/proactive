@@ -35,7 +35,7 @@ jobs:
           OUTPUT_DIR: output
         run: |
           mkdir -p output
-          rm -f output/*.xlsx
+          rm -f output/*.xlsx output/overall_report.md
           python -m app.newrelic_client
 
       - name: Upload report as artifact
@@ -43,7 +43,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: newrelic-market-reports
-          path: output/*.xlsx
+          path: |
+            output/*.xlsx
+            output/overall_report.md
           if-no-files-found: warn
           retention-days: 30
 
@@ -52,7 +54,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add --force output/*.xlsx
+          git add --force output/*.xlsx output/overall_report.md
           if git diff --cached --quiet; then
             echo "Report is unchanged; nothing to commit."
           else

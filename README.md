@@ -29,6 +29,6 @@ python -m pip install -r requirements.txt
 python -m app.newrelic_client
 ```
 
-Reports are saved to `output/<market>.xlsx`; set `OUTPUT_DIR` to change the output folder. GitHub Actions runs hourly or by manual dispatch, uploads all generated workbooks, and commits them only after every market API query and report succeeds.
+Market reports are saved to `output/<market>.xlsx`, and the cross-market summary based on `markets/overall_report.md` is saved to `output/overall_report.md`; unavailable market metrics appear as `-`. Set `OUTPUT_DIR` to change the output folder. GitHub Actions runs hourly or by manual dispatch, uploads all 14 market reports plus the overall summary, and commits them only after every market API query and report succeeds.
 
 For a multi-bucket time series, the report scans newest to oldest and records the latest positive value and its bucket timestamp. If every bucket is zero, it reports `0` with the latest bucket timestamp. A single aggregate result of `count: 0` also remains zero. See [EXCEL_REPORT.md](./EXCEL_REPORT.md) for report details.
