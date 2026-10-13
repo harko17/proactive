@@ -3,11 +3,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from app.market import _match_score
 
 
+OVERALL_REPORT_TITLE = "Overall Market Monitoring Report"
 MARKET_COLUMNS = {
     "ZA": "za",
     "GLO DE": "glo-de",
@@ -97,24 +100,6 @@ def _find_value(metric: str, report_rows: list[tuple[str, object]]) -> str:
     return _format_value(matches[0][2])
 
 
-def _render_table(headers: list[str], rows: list[list[str]]) -> str:
-    widths = [
-        max(len(header), *(len(row[index]) for row in rows))
-        for index, header in enumerate(headers)
-    ]
-
-    def border() -> str:
-        return "+" + "+".join("-" * (width + 2) for width in widths) + "+"
-
-    def render_row(row: list[str]) -> str:
-        return "| " + " | ".join(value.ljust(widths[index]) for index, value in enumerate(row)) + " |"
-
-    output = [border(), render_row(headers), border()]
-    for row in rows:
-        output.extend((render_row(row), border()))
-    return "\n".join(output) + "\n"
-
-
 def generate_overall_report(template_path: Path, reports_dir: Path, output_path: Path) -> str:
     headers, metric_rows = _read_template(template_path)
     values_by_market = {
@@ -134,5 +119,49 @@ def generate_overall_report(template_path: Path, reports_dir: Path, output_path:
         ])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(_render_table(headers, report_rows), encoding="utf-8")
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Overall Summary"
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+    title = sheet.cell(row=1, column=1, value=OVERALL_REPORT_TITLE)
+    title.font = Font(name="Aptos", size=14, bold=True, color="FFFFFF")
+    title.fill = PatternFill("solid", fgColor="477C7D")
+    title.alignment = Alignment(horizontal="center", vertical="center")
+    sheet.row_dimensions[1].height = 26
+
+    thin_gray = Side(style="thin", color="B7C9C9")
+    grid_border = Border(left=thin_gray, right=thin_gray, top=thin_gray, bottom=thin_gray)
+    for column, header in enumerate(headers, start=1):
+        cell = sheet.cell(row=2, column=column, value=header)
+        cell.font = Font(name="Aptos", size=11, bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="5B9A9B")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = grid_border
+    sheet.row_dimensions[2].height = 30
+
+    for row_index, row in enumerate(report_rows, start=3):
+        for column, value in enumerate(row, start=1):
+            cell_value = value
+            if column > 1 and value != "-":
+                try:
+                    cell_value = float(value) if "." in value else int(value)
+                except ValueError:
+                    pass
+            cell = sheet.cell(row=row_index, column=column, value=cell_value)
+            cell.font = Font(name="Aptos", size=10, color="263238")
+            cell.alignment = Alignment(
+                horizontal="left" if column == 1 else "center",
+                vertical="center",
+            )
+            cell.border = grid_border
+            if row_index % 2 == 1:
+                cell.fill = PatternFill("solid", fgColor="EAF2F2")
+
+    sheet.column_dimensions["A"].width = 58
+    for column in range(2, len(headers) + 1):
+        sheet.column_dimensions[get_column_letter(column)].width = 14
+    sheet.freeze_panes = "B3"
+    sheet.auto_filter.ref = f"A2:{get_column_letter(len(headers))}{len(report_rows) + 2}"
+    sheet.sheet_view.showGridLines = False
+    workbook.save(output_path)
     return str(output_path)

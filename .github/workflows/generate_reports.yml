@@ -45,7 +45,6 @@ jobs:
           name: newrelic-market-reports
           path: |
             output/*.xlsx
-            output/overall_report.md
           if-no-files-found: warn
           retention-days: 30
 
@@ -54,7 +53,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add --force output/*.xlsx output/overall_report.md
+          git add --force output/*.xlsx
           if git diff --cached --quiet; then
             echo "Report is unchanged; nothing to commit."
           else

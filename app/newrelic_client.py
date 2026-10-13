@@ -400,7 +400,7 @@ class NewRelicDashboardClient:
         overall_report_path = generate_overall_report(
             markets_root / "overall_report.md",
             output_dir,
-            output_dir / "overall_report.md",
+            output_dir / "overall_report.xlsx",
         )
         report_paths.append(overall_report_path)
         print(f"Prepared overall report -> {overall_report_path}")

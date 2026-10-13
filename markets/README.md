@@ -21,4 +21,4 @@ Each market has a separate cURL request, response capture, and Excel layout spec
 
 Tetris FR and Tetris GR use the `TETRIS_API_KEY` GitHub Actions secret; all other markets use `NEW_RELIC_API_KEY`. Add both secrets under **Settings → Secrets and variables → Actions**. Secret names cannot contain spaces.
 
-[`overall_report.md`](./overall_report.md) is the cross-market summary template. Each successful run fills it from the 14 generated market workbooks and writes the 15th report to `output/overall_report.md`; market/metric combinations that are not present are shown as `-`.
+[`overall_report.md`](./overall_report.md) is the cross-market summary template. Each successful run fills it from the 14 generated market workbooks and writes the 15th report to `output/overall_report.xlsx`; market/metric combinations that are not present are shown as `-`.

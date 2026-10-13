@@ -333,19 +333,18 @@ def test_overall_report_fills_market_values_and_marks_missing_metrics(tmp_path):
             }
         ])
 
-    output_path = tmp_path / "output" / "overall_report.md"
+    output_path = tmp_path / "output" / "overall_report.xlsx"
     generate_overall_report(template_path, reports_dir, output_path)
 
-    rows = [
-        [cell.strip() for cell in line.strip().strip("|").split("|")]
-        for line in output_path.read_text(encoding="utf-8").splitlines()
-        if line.startswith("|")
+    workbook = load_workbook(output_path, data_only=True)
+    sheet = workbook["Overall Summary"]
+    assert sheet.max_row == 3
+    assert sheet.max_column == 15
+    assert sheet["A3"].value == "Abandoned Cart Update Error"
+    assert [sheet.cell(row=3, column=column).value for column in range(2, 16)] == [
+        "-", "-", "-", 7, "-", "-", "-", "-", "-", "-", "-", "-", "-", "-",
     ]
-    assert rows[1] == [
-        "Abandoned Cart Update Error", "-", "-", "-", "7", "-", "-", "-",
-        "-", "-", "-", "-", "-", "-", "-",
-    ]
-    assert "#NAME?" not in output_path.read_text(encoding="utf-8")
+    assert sheet.freeze_panes == "B3"
 
 
 def test_run_generates_market_workbooks_from_mocked_api_responses(monkeypatch, tmp_path):
@@ -368,14 +367,15 @@ def test_run_generates_market_workbooks_from_mocked_api_responses(monkeypatch, t
         *(path.name for path in MARKET_DIRS),
         "overall_report",
     }
-    assert Path(report_paths[-1]).name == "overall_report.md"
+    assert Path(report_paths[-1]).name == "overall_report.xlsx"
     for path in report_paths:
         assert Path(path).is_file()
         if Path(path).suffix == ".xlsx":
             workbook = load_workbook(path, data_only=True)
-            assert workbook["Dashboard Summary"].max_row > 1
+            sheet_name = "Overall Summary" if Path(path).name == "overall_report.xlsx" else "Dashboard Summary"
+            assert workbook[sheet_name].max_row > 1
         else:
-            assert "#NAME?" not in Path(path).read_text(encoding="utf-8")
+            raise AssertionError(f"Unexpected non-Excel report: {path}")
     assert credentials_by_alias["stuckinpendingstatus"] == (
         "test-tetris-api-key",
         "TETRIS_API_KEY",
