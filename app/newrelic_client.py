@@ -25,12 +25,20 @@ class NewRelicDashboardClient:
     def __init__(self):
         self.settings = get_runtime_settings()
 
-    def _send_graphql_payload(self, payload: dict, entries: list[dict]) -> dict:
+    def _send_graphql_payload(
+        self,
+        payload: dict,
+        entries: list[dict],
+        api_key: str | None = None,
+        api_key_name: str = "NEW_RELIC_API_KEY",
+    ) -> dict:
         if not entries:
             return {}
-        api_key = self.settings.get("api_key")
+        if api_key is None:
+            settings_key = "tetris_api_key" if api_key_name == "TETRIS_API_KEY" else "api_key"
+            api_key = self.settings.get(settings_key)
         if not api_key:
-            raise ValueError("Set the NEW_RELIC_API_KEY GitHub Actions secret to query New Relic.")
+            raise ValueError(f"Set the {api_key_name} GitHub Actions secret to query New Relic.")
 
         endpoint = self.settings.get("graphql_endpoint", "https://api.newrelic.com/graphql")
 
@@ -58,7 +66,7 @@ class NewRelicDashboardClient:
 
             if response.status_code in {401, 403}:
                 raise RuntimeError(
-                    "New Relic authentication/authorization failed. Check the NEW_RELIC_API_KEY secret "
+                    f"New Relic authentication/authorization failed. Check the {api_key_name} secret "
                     "and its access to all dashboard accounts."
                 )
             if response.status_code >= 400:
@@ -79,11 +87,15 @@ class NewRelicDashboardClient:
         data = response_data.get("data")
         actor = data.get("actor") if isinstance(data, dict) else None
         errors = response_data.get("errors") or []
+        aliases = {entry["alias"] for entry in entries}
         alias_errors = {}
         global_errors = []
         for error in errors:
             path = error.get("path") if isinstance(error, dict) else None
-            alias = path[1] if isinstance(path, list) and len(path) > 1 else None
+            alias = next(
+                (part for part in path if isinstance(part, str) and part in aliases),
+                None,
+            ) if isinstance(path, list) else None
             message = error.get("message", "GraphQL query failed") if isinstance(error, dict) else str(error)
             if alias:
                 alias_errors.setdefault(alias, []).append(message)
@@ -100,6 +112,15 @@ class NewRelicDashboardClient:
                 results[alias] = {"error": "; ".join(alias_errors[alias])}
                 continue
             query_result = actor.get(alias) if isinstance(actor, dict) else None
+            if query_result is None and isinstance(actor, dict):
+                pending = list(actor.values())
+                while pending and query_result is None:
+                    candidate = pending.pop()
+                    if isinstance(candidate, dict):
+                        if alias in candidate:
+                            query_result = candidate[alias]
+                        else:
+                            pending.extend(candidate.values())
             nrql = query_result.get("nrql", query_result) if isinstance(query_result, dict) else None
             values = nrql.get("results") if isinstance(nrql, dict) else None
             if isinstance(values, list):
@@ -334,7 +355,15 @@ class NewRelicDashboardClient:
                 continue
 
             try:
-                response = self._send_graphql_payload(payload, query_entries)
+                is_tetris = market_dir.name in {"tetris-fr", "tetris-gr"}
+                api_key_name = "TETRIS_API_KEY" if is_tetris else "NEW_RELIC_API_KEY"
+                api_key = self.settings.get("tetris_api_key") if is_tetris else self.settings.get("api_key")
+                response = self._send_graphql_payload(
+                    payload,
+                    query_entries,
+                    api_key=api_key,
+                    api_key_name=api_key_name,
+                )
             except RuntimeError as exc:
                 failures.append(f"{market_dir.name}: {exc}")
                 response = {"data": {"actor": {}}, "errors": [{"message": str(exc)}]}

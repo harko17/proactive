@@ -31,6 +31,7 @@ jobs:
       - name: Generate New Relic Report
         env:
           NEW_RELIC_API_KEY: ${{ secrets.NEW_RELIC_API_KEY }}
+          TETRIS_API_KEY: ${{ secrets.TETRIS_API_KEY }}
           OUTPUT_DIR: output
         run: |
           mkdir -p output

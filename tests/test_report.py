@@ -71,6 +71,25 @@ def test_every_market_request_has_unique_aliases_and_a_complete_report_row_set(m
     }
 
 
+@pytest.mark.parametrize(
+    ("market_name", "expected_title", "expected_metrics"),
+    [
+        ("tetris-fr", "Tetris FR", 24),
+        ("tetris-gr", "Tetris GR", 12),
+    ],
+)
+def test_tetris_report_layout_matches_every_query(market_name, expected_title, expected_metrics):
+    market_dir = MARKETS_ROOT / market_name
+    _, entries = load_request(market_dir / "CURLS.md")
+    layout = parse_report_layout(market_dir / "EXCEL_REPORT.md", market_name)
+    rows = apply_report_layout(entries, layout)
+
+    assert layout["title"] == expected_title
+    assert len(entries) == expected_metrics
+    assert len(rows) == expected_metrics
+    assert all(row["mapping_status"] == "matched" for row in rows)
+
+
 @pytest.mark.parametrize("market_dir", MARKET_DIRS, ids=lambda path: path.name)
 def test_saved_response_fixture_matches_every_market_query_alias(market_dir):
     response = load_response_fixture(market_dir / "response.md")
@@ -80,7 +99,18 @@ def test_saved_response_fixture_matches_every_market_query_alias(market_dir):
     _, entries = load_request(market_dir / "CURLS.md")
     actor = response["data"].get("actor")
     assert isinstance(actor, dict)
-    assert set(actor) == {entry["alias"] for entry in entries}
+    expected_aliases = {entry["alias"] for entry in entries}
+
+    def find_aliases(value):
+        if isinstance(value, dict):
+            return (set(value) & expected_aliases).union(
+                *(find_aliases(child) for child in value.values())
+            )
+        if isinstance(value, list):
+            return set().union(*(find_aliases(child) for child in value))
+        return set()
+
+    assert find_aliases(actor) == expected_aliases
 
 
 def test_account_ids_are_taken_from_each_alias_query():
@@ -187,6 +217,39 @@ def test_graphql_alias_errors_do_not_discard_successful_results():
     }
 
 
+def test_graphql_batch_results_support_aliases_inside_unaliased_account():
+    entries = [{"alias": "good"}, {"alias": "bad"}]
+    response = {
+        "data": {
+            "actor": {
+                "account": {
+                    "good": {"results": [{"count": 4}]},
+                }
+            }
+        },
+        "errors": [
+            {"message": "NRQL query failed", "path": ["actor", "account", "bad", "nrql"]}
+        ],
+    }
+
+    assert NewRelicDashboardClient._extract_graphql_batch_results(response, entries) == {
+        "good": {"results": [{"count": 4}]},
+        "bad": {"error": "NRQL query failed"},
+    }
+
+
+def test_tetris_market_requires_its_dedicated_api_key():
+    client = make_client(tetris_api_key="")
+    payload, entries = load_request(MARKETS_ROOT / "tetris-fr" / "CURLS.md")
+
+    with pytest.raises(ValueError, match="TETRIS_API_KEY"):
+        client._send_graphql_payload(
+            payload,
+            entries,
+            api_key_name="TETRIS_API_KEY",
+        )
+
+
 @pytest.mark.parametrize(
     "market_dir",
     [path for path in MARKET_DIRS if path.name != "japan"],
@@ -244,21 +307,39 @@ def test_report_writer_preserves_repeated_categories_and_title_column(tmp_path):
     assert not sheet.merged_cells.ranges
 
 
-def test_run_generates_twelve_market_workbooks_from_mocked_api_responses(monkeypatch, tmp_path):
-    client = make_client(output_dir=str(tmp_path))
+def test_run_generates_market_workbooks_from_mocked_api_responses(monkeypatch, tmp_path):
+    client = make_client(output_dir=str(tmp_path), tetris_api_key="test-tetris-api-key")
+    credentials_by_alias = {}
+
+    def mock_send(self, payload, entries, api_key=None, api_key_name="NEW_RELIC_API_KEY"):
+        credentials_by_alias[entries[0]["alias"]] = (api_key, api_key_name)
+        return make_mock_response(entries)
+
     monkeypatch.setattr(
         NewRelicDashboardClient,
         "_send_graphql_payload",
-        lambda self, payload, entries: make_mock_response(entries),
+        mock_send,
     )
 
     report_paths = client.run()
-    assert len(report_paths) == 12
+    assert len(report_paths) == len(MARKET_DIRS)
     assert {Path(path).stem for path in report_paths} == {path.name for path in MARKET_DIRS}
     for path in report_paths:
         assert Path(path).is_file()
         workbook = load_workbook(path, data_only=True)
         assert workbook["Dashboard Summary"].max_row > 1
+    assert credentials_by_alias["stuckinpendingstatus"] == (
+        "test-tetris-api-key",
+        "TETRIS_API_KEY",
+    )
+    assert credentials_by_alias["stuckInPendingStatus"] == (
+        "test-tetris-api-key",
+        "TETRIS_API_KEY",
+    )
+    assert credentials_by_alias["normalOrderCreation"] == (
+        "test-api-key",
+        "NEW_RELIC_API_KEY",
+    )
 
 
 def test_api_post_sends_exact_payload_and_postman_headers(monkeypatch):

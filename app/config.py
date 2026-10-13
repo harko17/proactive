@@ -24,6 +24,7 @@ def get_runtime_settings() -> dict:
     return {
         "graphql_endpoint": NEW_RELIC_GRAPHQL_ENDPOINT,
         "api_key": api_key,
+        "tetris_api_key": _read_env("TETRIS_API_KEY"),
         "markets_root": str(MARKETS_ROOT),
         "output_dir": _read_env("OUTPUT_DIR", str(PROJECT_ROOT / "output")),
     }

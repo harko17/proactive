@@ -12,14 +12,14 @@ The response parser associates each result with the matching GraphQL alias. It r
 
 ## Configure credentials
 
-The only required New Relic credential is a User API key. Add it as a repository secret:
+Add New Relic User API keys as repository secrets:
 
 1. Open **Settings → Secrets and variables → Actions**.
 2. Select **New repository secret**.
 3. Set the name to `NEW_RELIC_API_KEY`.
 4. Set the value to the API key itself—without quotes or an `API-Key:` prefix.
 
-The same environment variable can be set for a local run. Do not commit the real key.
+Repeat these steps for `TETRIS_API_KEY`; Tetris FR and Tetris GR use this separate key, while every other market uses `NEW_RELIC_API_KEY`. Set both environment variables for local runs. Do not commit either key.
 
 ## Run
 

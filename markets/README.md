@@ -16,3 +16,7 @@ Each market has a separate cURL request, response capture, and Excel layout spec
 | Serbia | [serbia/CURLS.md](./serbia/CURLS.md) | [serbia/response.md](./serbia/response.md) | [serbia/EXCEL_REPORT.md](./serbia/EXCEL_REPORT.md) |
 | VELO IT | [velo-it/CURLS.md](./velo-it/CURLS.md) | [velo-it/response.md](./velo-it/response.md) | [velo-it/EXCEL_REPORT.md](./velo-it/EXCEL_REPORT.md) |
 | VUSE IT | [vuse-it/CURLS.md](./vuse-it/CURLS.md) | [vuse-it/response.md](./vuse-it/response.md) | [vuse-it/EXCEL_REPORT.md](./vuse-it/EXCEL_REPORT.md) |
+| Tetris FR | [tetris-fr/CURLS.md](./tetris-fr/CURLS.md) | [tetris-fr/response.md](./tetris-fr/response.md) | [tetris-fr/EXCEL_REPORT.md](./tetris-fr/EXCEL_REPORT.md) |
+| Tetris GR | [tetris-gr/CURLS.md](./tetris-gr/CURLS.md) | [tetris-gr/response.md](./tetris-gr/response.md) | [tetris-gr/EXCEL_REPORT.md](./tetris-gr/EXCEL_REPORT.md) |
+
+Tetris FR and Tetris GR use the `TETRIS_API_KEY` GitHub Actions secret; all other markets use `NEW_RELIC_API_KEY`. Add both secrets under **Settings → Secrets and variables → Actions**. Secret names cannot contain spaces.
