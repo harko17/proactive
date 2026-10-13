@@ -35,6 +35,7 @@ jobs:
           OUTPUT_DIR: output
         run: |
           mkdir -p output
+          rm -f output/*.xlsx
           python -m app.newrelic_client
 
       - name: Upload report as artifact
